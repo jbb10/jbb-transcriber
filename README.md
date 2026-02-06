@@ -30,28 +30,28 @@ sudo apt-get install ffmpeg
 choco install ffmpeg
 ```
 
-### Install via uv (recommended)
+### Install via uv tool (recommended)
 
 ```bash
-uv pip install git+https://github.com/<user>/transcriber.git
+uv tool install git+https://github.com/Deloitte-Nordics/transcriber.git
 ```
 
-Or pin to a specific version:
-
-```bash
-uv pip install git+https://github.com/<user>/transcriber.git@v0.1.0
-```
-
-### Install via pip
-
-```bash
-pip install git+https://github.com/<user>/transcriber.git
-```
+This installs `transcribe` as a global command available from anywhere.
 
 ### Run without installing (uvx)
 
 ```bash
-uvx --from git+https://github.com/<user>/transcriber.git transcribe audio.mp3
+uvx --from git+https://github.com/Deloitte-Nordics/transcriber.git transcribe audio.mp3
+```
+
+### Install into a virtual environment
+
+If you prefer to install into a specific environment:
+
+```bash
+uv pip install git+https://github.com/Deloitte-Nordics/transcriber.git
+# or
+pip install git+https://github.com/Deloitte-Nordics/transcriber.git
 ```
 
 ## Configuration
@@ -203,6 +203,10 @@ For glossary correction, the tool includes retry logic:
 ## Uninstallation
 
 ```bash
+# If installed via uv tool
+uv tool uninstall transcriber
+
+# If installed via pip/uv pip
 uv pip uninstall transcriber
 # or
 pip uninstall transcriber
@@ -222,7 +226,7 @@ This project uses [Semantic Versioning](https://semver.org/). Versions are track
 Users can then install a specific version:
 
 ```bash
-uv pip install git+https://github.com/<user>/transcriber.git@vX.Y.Z
+uv tool install git+https://github.com/Deloitte-Nordics/transcriber.git@vX.Y.Z
 ```
 
 ## Requirements
