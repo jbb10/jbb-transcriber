@@ -15,21 +15,6 @@ A command-line tool for transcribing audio and video files to text.
 
 ## Installation
 
-### Prerequisites
-
-**ffmpeg** is required for audio conversion and splitting. Install it for your platform:
-
-```bash
-# macOS
-brew install ffmpeg
-
-# Ubuntu/Debian
-sudo apt-get install ffmpeg
-
-# Windows (with Chocolatey)
-choco install ffmpeg
-```
-
 ### Install via uv tool (recommended)
 
 ```bash
@@ -232,8 +217,6 @@ uv tool install git+https://github.com/Deloitte-Nordics/transcriber.git@vX.Y.Z
 ## Requirements
 
 - Python 3.10 or higher
-- `requests` library (automatically installed)
-- `ffmpeg` (system dependency — see Installation)
 - Azure OpenAI Service with:
   - A transcription model deployment (e.g., gpt-4o-transcribe)
   - A chat completion model deployment (only for glossary feature)
