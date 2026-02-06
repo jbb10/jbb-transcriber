@@ -51,3 +51,11 @@ htmlcov/
 
 ### Logs
 *.log
+
+### Test fixtures (user-provided audio files)
+tests/.env
+tests/fixtures/*.mp3
+tests/fixtures/*.m4a
+tests/fixtures/*.wav
+tests/fixtures/*.ogg
+tests/fixtures/*.flac

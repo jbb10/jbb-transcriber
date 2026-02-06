@@ -1,0 +1,4 @@
+# Place your test audio files here:
+# - short_speech.mp3: Short clip (~10-30 sec) with clear speech, single speaker
+# - two_speakers.mp3: Audio with 2 distinct speakers (30-60 sec)
+# - long_recording.mp3: Audio >23 min 20 sec for chunking tests (optional)
