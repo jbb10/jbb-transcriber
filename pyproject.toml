@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "transcriber"
+version = "0.1.0"
+description = "Audio transcription CLI tool using Azure OpenAI with speaker diarization"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "requests>=2.31.0",
+]
+
+[project.scripts]
+transcribe = "transcriber:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+include = ["transcriber.py", "correction_prompt.txt"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "transcriber.py",
+    "correction_prompt.txt",
+    "README.md",
+    "pyproject.toml",
+]
