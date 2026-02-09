@@ -462,3 +462,146 @@ class TestLocalTranscription:
         lines = result.strip().split("\n")
         assert len(lines) == 1
         assert "Real content" in result
+
+
+class TestLocalModeValidation:
+    """Tests for local mode validation in validate_config."""
+
+    @pytest.fixture
+    def valid_audio_file(self, short_audio_file):
+        """Return a valid audio file path."""
+        return short_audio_file
+
+    @pytest.fixture
+    def local_args(self, valid_audio_file):
+        """Create a mock args namespace for local mode."""
+        return argparse.Namespace(
+            audio_file=valid_audio_file,
+            output_file=None,
+            glossary=None,
+            synthesise=False,
+            parallel_workers=15,
+            local=True,
+            model="base",
+            language=None,
+        )
+
+    def test_local_mode_no_azure_credentials_required(self, local_args, monkeypatch):
+        """--local works without AZURE_TRANSCRIBE_* env vars."""
+        # Remove all Azure credentials
+        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
+        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
+        monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
+        monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
+
+        # Should NOT exit - local mode doesn't need Azure transcription credentials
+        # Note: may fail on import_whisper check, so we mock that
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "whisper":
+                # Return a mock module
+                import types
+
+                mock_whisper = types.ModuleType("whisper")
+                return mock_whisper
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+
+        config = validate_config(local_args)
+        assert config.local_mode is True
+        assert config.transcribe_api_key == ""
+        assert config.transcribe_url == ""
+
+    def test_azure_mode_still_requires_credentials(self, local_args, monkeypatch, capsys):
+        """Default (non-local) mode still requires Azure credentials."""
+        local_args.local = False
+        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
+        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
+
+        with pytest.raises(SystemExit) as exc_info:
+            validate_config(local_args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "AZURE_TRANSCRIBE_API_KEY" in captured.err
+
+    def test_local_with_glossary_requires_text_api(self, local_args, monkeypatch, capsys):
+        """--local with --glossary still requires Azure text API credentials."""
+        local_args.glossary = "/some/glossary.txt"
+        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
+        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
+        monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
+        monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
+
+        # Mock whisper import
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "whisper":
+                import types
+
+                return types.ModuleType("whisper")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+
+        with pytest.raises(SystemExit) as exc_info:
+            validate_config(local_args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        # Should require text API but NOT transcription API
+        assert "AZURE_TEXT_API_KEY" in captured.err
+        # Should NOT complain about transcription API
+        assert "AZURE_TRANSCRIBE_API_KEY" not in captured.err
+
+    def test_local_with_synthesise_requires_text_api(self, local_args, monkeypatch, capsys):
+        """--local with --synthesise still requires Azure text API credentials."""
+        local_args.synthesise = True
+        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
+        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
+        monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
+        monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
+
+        # Mock whisper import
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "whisper":
+                import types
+
+                return types.ModuleType("whisper")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+
+        with pytest.raises(SystemExit) as exc_info:
+            validate_config(local_args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "AZURE_TEXT_API_KEY" in captured.err
+
+    def test_local_mode_whisper_not_installed_error(self, local_args, monkeypatch, capsys):
+        """--local mode fails with helpful message when whisper not installed."""
+        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
+        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
+
+        # Mock whisper import to fail
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "whisper":
+                raise ImportError("No module named 'whisper'")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+
+        with pytest.raises(SystemExit) as exc_info:
+            validate_config(local_args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "openai-whisper" in captured.err

@@ -166,17 +166,24 @@ def validate_config(args: argparse.Namespace) -> ValidatedConfig:
     text_api_key: str | None = None
     text_url: str | None = None
 
-    if not transcribe_api_key:
-        errors.append(
-            "AZURE_TRANSCRIBE_API_KEY environment variable is not set. "
-            'Add to ~/.zshrc: export AZURE_TRANSCRIBE_API_KEY="your-api-key"'
-        )
-
-    if not transcribe_url:
-        errors.append(
-            "AZURE_TRANSCRIBE_URL environment variable is not set. "
-            'Add to ~/.zshrc: export AZURE_TRANSCRIBE_URL="your-endpoint-url"'
-        )
+    # Azure transcription credentials only needed when NOT using local mode
+    if not args.local:
+        if not transcribe_api_key:
+            errors.append(
+                "AZURE_TRANSCRIBE_API_KEY environment variable is not set. "
+                'Add to ~/.zshrc: export AZURE_TRANSCRIBE_API_KEY="your-api-key"'
+            )
+        if not transcribe_url:
+            errors.append(
+                "AZURE_TRANSCRIBE_URL environment variable is not set. "
+                'Add to ~/.zshrc: export AZURE_TRANSCRIBE_URL="your-endpoint-url"'
+            )
+    else:
+        # In local mode, default to empty strings if not set
+        if not transcribe_api_key:
+            transcribe_api_key = ""
+        if not transcribe_url:
+            transcribe_url = ""
 
     # Text API required if glossary or synthesise is used
     require_text_api = bool(args.glossary) or args.synthesise
@@ -197,6 +204,16 @@ def validate_config(args: argparse.Namespace) -> ValidatedConfig:
             errors.append(
                 f"AZURE_TEXT_URL environment variable is not set (required for {feature}). "
                 'Add to ~/.zshrc: export AZURE_TEXT_URL="your-endpoint-url"'
+            )
+
+    # --- Validate Whisper availability in local mode ---
+    if args.local:
+        try:
+            import whisper  # type: ignore[import-not-found]  # noqa: F401
+        except ImportError:
+            errors.append(
+                "openai-whisper is not installed (required for --local mode). "
+                "Install with: uv tool install --with openai-whisper transcriber"
             )
 
     # --- Exit if any errors ---
@@ -1032,91 +1049,126 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
     validated = validate_config(args)
     api_config = validated.as_api_config()
 
-    # Convert to supported format if needed
+    # Convert to supported format if needed (needed for both local and Azure)
     converted_file = convert_to_supported_format(str(validated.audio_file))
     temp_converted = converted_file != str(validated.audio_file)
 
     try:
-        # Check duration and split if necessary
-        duration = get_audio_duration(converted_file)
-        max_duration = 1400  # 23 minutes 20 seconds (safe margin under 25 min limit)
-
-        if duration and duration > max_duration:
-            log(f"Audio duration: {duration / 60:.1f} min (exceeds limit)")
-            chunks, temp_dir = split_audio_file(
-                converted_file, chunk_duration=900
-            )  # 15-minute chunks
+        if validated.local_mode:
+            # Local Whisper transcription
+            log("Using local Whisper model for transcription")
 
             try:
-                chunk_duration = 900  # 15-minute chunks
+                final_transcript = transcribe_audio_local(converted_file, validated)
 
-                # Prepare chunk info for parallel processing
-                chunk_infos = [(i, chunk, i * chunk_duration) for i, chunk in enumerate(chunks)]
+                # Apply glossary correction if provided (uses Azure LLM)
+                if validated.glossary_text:
+                    log("Applying glossary correction...")
+                    final_transcript = correct_with_glossary(
+                        final_transcript, validated.glossary_text, api_config
+                    )
 
-                # Process chunks in parallel
-                num_workers = min(validated.parallel_workers, len(chunks))
-                log(f"Processing {len(chunks)} chunks with {num_workers} parallel workers...")
-
-                results: dict[int, str] = {}
-                with ThreadPoolExecutor(max_workers=num_workers) as executor:
-                    # Submit all tasks
-                    future_to_index = {
-                        executor.submit(
-                            process_chunk, info, api_config, validated.glossary_text
-                        ): info[0]
-                        for info in chunk_infos
-                    }
-
-                    # Collect results as they complete
-                    for future in as_completed(future_to_index):
-                        index = future_to_index[future]
-                        try:
-                            idx, transcription = future.result()
-                            results[idx] = transcription
-                            log(f"Completed chunk {idx + 1}/{len(chunks)}")
-                        except Exception as e:
-                            log(f"Error processing chunk {index + 1}: {e}")
-                            sys.exit(1)
-
-                # Combine all transcriptions in correct order
-                all_transcriptions = [results[i] for i in range(len(chunks))]
-                final_transcript = "\n".join(all_transcriptions)
                 write_output(final_transcript, str(validated.output_file))
-            finally:
-                # Clean up chunks
-                log("Cleaning up temporary audio files...")
-                for chunk in chunks:
-                    if os.path.exists(chunk):
-                        os.unlink(chunk)
-                if os.path.exists(temp_dir):
-                    os.rmdir(temp_dir)
-                log("Temporary files cleaned up")
-        else:
-            # Transcribe single file
-            final_transcript = transcribe_audio(
-                converted_file, api_config["transcribe_key"], api_config["transcribe_url"]
-            )
 
-            # Apply glossary correction if provided
-            if validated.glossary_text:
-                log("Applying glossary correction...")
-                final_transcript = correct_with_glossary(
-                    final_transcript, validated.glossary_text, api_config
+                # Generate synthesis if requested (uses Azure LLM)
+                if validated.synthesise:
+                    output_stem = validated.output_file.with_suffix("")
+                    synthesis_output = str(output_stem) + "_synthesis.md"
+                    log("Generating synthesis document...")
+                    try:
+                        synthesis = synthesise_transcript(final_transcript, api_config)
+                        write_output(synthesis, synthesis_output)
+                    except RuntimeError as e:
+                        log(f"Warning: {e}")
+                        log(
+                            "Transcript was saved successfully, "
+                            "but synthesis could not be generated."
+                        )
+            finally:
+                # Local mode doesn't create temp chunks like Azure mode
+                pass
+        else:
+            # Azure API transcription (existing behavior)
+            # Check duration and split if necessary
+            duration = get_audio_duration(converted_file)
+            max_duration = 1400  # 23 minutes 20 seconds (safe margin under 25 min limit)
+
+            if duration and duration > max_duration:
+                log(f"Audio duration: {duration / 60:.1f} min (exceeds limit)")
+                chunks, temp_dir = split_audio_file(
+                    converted_file, chunk_duration=900
+                )  # 15-minute chunks
+
+                try:
+                    chunk_duration = 900  # 15-minute chunks
+
+                    # Prepare chunk info for parallel processing
+                    chunk_infos = [(i, chunk, i * chunk_duration) for i, chunk in enumerate(chunks)]
+
+                    # Process chunks in parallel
+                    num_workers = min(validated.parallel_workers, len(chunks))
+                    log(f"Processing {len(chunks)} chunks with {num_workers} parallel workers...")
+
+                    results: dict[int, str] = {}
+                    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                        # Submit all tasks
+                        future_to_index = {
+                            executor.submit(
+                                process_chunk, info, api_config, validated.glossary_text
+                            ): info[0]
+                            for info in chunk_infos
+                        }
+
+                        # Collect results as they complete
+                        for future in as_completed(future_to_index):
+                            index = future_to_index[future]
+                            try:
+                                idx, transcription = future.result()
+                                results[idx] = transcription
+                                log(f"Completed chunk {idx + 1}/{len(chunks)}")
+                            except Exception as e:
+                                log(f"Error processing chunk {index + 1}: {e}")
+                                sys.exit(1)
+
+                    # Combine all transcriptions in correct order
+                    all_transcriptions = [results[i] for i in range(len(chunks))]
+                    final_transcript = "\n".join(all_transcriptions)
+                    write_output(final_transcript, str(validated.output_file))
+                finally:
+                    # Clean up chunks
+                    log("Cleaning up temporary audio files...")
+                    for chunk in chunks:
+                        if os.path.exists(chunk):
+                            os.unlink(chunk)
+                    if os.path.exists(temp_dir):
+                        os.rmdir(temp_dir)
+                    log("Temporary files cleaned up")
+            else:
+                # Transcribe single file
+                final_transcript = transcribe_audio(
+                    converted_file, api_config["transcribe_key"], api_config["transcribe_url"]
                 )
 
-            write_output(final_transcript, str(validated.output_file))
+                # Apply glossary correction if provided
+                if validated.glossary_text:
+                    log("Applying glossary correction...")
+                    final_transcript = correct_with_glossary(
+                        final_transcript, validated.glossary_text, api_config
+                    )
 
-        # Generate synthesis if requested
-        if validated.synthesise:
-            output_stem = validated.output_file.with_suffix("")
-            synthesis_output = str(output_stem) + "_synthesis.md"
-            log("Generating synthesis document...")
-            try:
-                synthesis = synthesise_transcript(final_transcript, api_config)
-                write_output(synthesis, synthesis_output)
-            except RuntimeError as e:
-                log(f"Warning: {e}")
-                log("Transcript was saved successfully, but synthesis could not be generated.")
+                write_output(final_transcript, str(validated.output_file))
+
+            # Generate synthesis if requested
+            if validated.synthesise:
+                output_stem = validated.output_file.with_suffix("")
+                synthesis_output = str(output_stem) + "_synthesis.md"
+                log("Generating synthesis document...")
+                try:
+                    synthesis = synthesise_transcript(final_transcript, api_config)
+                    write_output(synthesis, synthesis_output)
+                except RuntimeError as e:
+                    log(f"Warning: {e}")
+                    log("Transcript was saved successfully, but synthesis could not be generated.")
     finally:
         # Clean up converted file if we created one
         if temp_converted and os.path.exists(converted_file):
