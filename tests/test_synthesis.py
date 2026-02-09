@@ -31,12 +31,15 @@ class TestSynthesisGeneration:
 
     def test_synthesise_transcript_basic(self, azure_text_config):
         """synthesise_transcript generates a synthesis document."""
-        test_transcript = """[0.00s - 10.00s] A: Welcome everyone. Today we need to discuss the Q1 roadmap.
+        test_transcript = (
+            """[0.00s - 10.00s] A: Welcome everyone. """
+            """Today we need to discuss the Q1 roadmap.
 [10.00s - 20.00s] B: I think we should prioritise the API migration first.
 [20.00s - 30.00s] A: Agreed. Let's set a deadline for end of March.
 [30.00s - 40.00s] B: I'll take ownership of coordinating with the backend team.
 [40.00s - 50.00s] A: Perfect. Any risks we should note?
 [50.00s - 60.00s] B: The main risk is dependency on the legacy system being deprecated."""
+        )
 
         synthesis = synthesise_transcript(test_transcript, azure_text_config)
 
@@ -57,9 +60,7 @@ class TestSynthesisGeneration:
             "Synthesis should reference the Python decision"
         )
 
-    def test_synthesise_full_transcription(
-        self, short_audio_file, azure_text_config
-    ):
+    def test_synthesise_full_transcription(self, short_audio_file, azure_text_config):
         """Synthesis works with a real transcription."""
         # First, get a transcription
         transcription = transcribe_audio(

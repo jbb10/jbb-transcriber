@@ -229,9 +229,6 @@ def split_audio_file(file_path: str, chunk_duration: int = 900) -> tuple[list[st
             input_container.close()
             sys.exit(1)
 
-        # Get total duration for logging
-        duration = float(input_container.duration / av.time_base) if input_container.duration else 0
-
         chunk_index = 0
         chunk_start_time = 0
         output_container = None
@@ -498,9 +495,7 @@ def correct_with_glossary(
     return transcript
 
 
-def synthesise_transcript(
-    transcript: str, config: dict[str, str], max_retries: int = 3
-) -> str:
+def synthesise_transcript(transcript: str, config: dict[str, str], max_retries: int = 3) -> str:
     """Generate a synthesis document from transcript using LLM.
 
     Args:
@@ -611,8 +606,10 @@ def main() -> None:
 Environment Variables:
   AZURE_TRANSCRIBE_API_KEY    Your Azure OpenAI API key for transcription
   AZURE_TRANSCRIBE_URL        Your Azure OpenAI endpoint URL for transcription
-  AZURE_TEXT_API_KEY          Your Azure OpenAI API key for text LLM (required with --glossary or --synthesise)
-  AZURE_TEXT_URL              Your Azure OpenAI endpoint URL for text LLM (required with --glossary or --synthesise)
+  AZURE_TEXT_API_KEY          Your Azure OpenAI API key for text LLM
+                              (required with --glossary or --synthesise)
+  AZURE_TEXT_URL              Your Azure OpenAI endpoint URL for text LLM
+                              (required with --glossary or --synthesise)
 
 Example:
   transcribe audio.mp3 transcript.txt

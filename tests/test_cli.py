@@ -217,9 +217,7 @@ class TestCLIErrorHandling:
 class TestCLIWithSynthesis:
     """Tests for CLI with synthesis generation."""
 
-    def test_cli_with_synthesise(
-        self, short_audio_file, temp_output_file, azure_text_config
-    ):
+    def test_cli_with_synthesise(self, short_audio_file, temp_output_file, azure_text_config):
         """--synthesise flag generates synthesis document."""
         import shutil
 
@@ -261,9 +259,7 @@ class TestCLIWithSynthesis:
                 synthesis_content = f.read()
             assert len(synthesis_content) > 0, "Synthesis file should have content"
 
-    def test_cli_synthesise_short_flag(
-        self, short_audio_file, azure_text_config
-    ):
+    def test_cli_synthesise_short_flag(self, short_audio_file, azure_text_config):
         """-s short flag for synthesise works."""
         import shutil
 
@@ -294,7 +290,9 @@ class TestCLIWithSynthesis:
             )
 
             assert result.returncode == 0, f"CLI with -s flag failed: {result.stderr}"
-            assert os.path.exists(expected_synthesis), "Synthesis file should be created with -s flag"
+            assert os.path.exists(expected_synthesis), (
+                "Synthesis file should be created with -s flag"
+            )
 
     def test_cli_glossary_and_synthesise(
         self, short_audio_file, azure_text_config, sample_glossary
@@ -331,7 +329,9 @@ class TestCLIWithSynthesis:
                 timeout=900,  # Longer timeout for transcription + correction + synthesis
             )
 
-            assert result.returncode == 0, f"CLI with glossary and synthesise failed: {result.stderr}"
+            assert result.returncode == 0, (
+                f"CLI with glossary and synthesise failed: {result.stderr}"
+            )
 
             # Both outputs should exist
             assert os.path.exists(transcript_output), "Transcript file should be created"
