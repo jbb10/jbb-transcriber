@@ -6,12 +6,41 @@ A command-line tool for transcribing audio and video files to text.
 
 ## Features
 
-- Transcribe audio files in various formats (MP3, M4A, WAV, AAC, etc.)
+- Supports almost any audio and video format you can think of (powered by ffmpeg)
 - Automatic speaker diarization and timestamps
 - **Glossary-based correction** — Use a custom glossary to fix industry terms, names, and acronyms
 - **Parallel processing** — Long recordings are split into chunks and processed in parallel
 - Simple command-line interface
 - AI configured via environment variables
+
+## Usage
+
+```bash
+transcribe <audio_file> [output_file] [options]
+```
+
+### Options
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--glossary` | `-g` | None | Path to a glossary file for transcript correction |
+| `--parallel-workers` | `-p` | 15 | Maximum parallel workers for chunk processing |
+
+### Examples
+
+```bash
+# Basic transcription
+transcribe meeting.mp3 meeting-transcript.txt
+
+# Output file defaults to input filename with .txt extension
+transcribe podcast-episode.m4a
+
+# With glossary correction
+transcribe meeting.mp3 transcript.txt --glossary company-terms.txt
+
+# Long recording with custom parallelization
+transcribe 2hour-webinar.m4a output.txt -g glossary.txt -p 10
+```
 
 ## Installation
 
@@ -27,16 +56,6 @@ This installs `transcribe` as a global command available from anywhere.
 
 ```bash
 uvx --from git+https://github.com/Deloitte-Nordics/transcriber.git transcribe audio.mp3
-```
-
-### Install into a virtual environment
-
-If you prefer to install into a specific environment:
-
-```bash
-uv pip install git+https://github.com/Deloitte-Nordics/transcriber.git
-# or
-pip install git+https://github.com/Deloitte-Nordics/transcriber.git
 ```
 
 ## Configuration
@@ -74,35 +93,6 @@ Then reload your shell configuration:
 source ~/.zshrc
 ```
 
-## Usage
-
-```bash
-transcribe <audio_file> [output_file] [options]
-```
-
-### Options
-
-| Option | Short | Default | Description |
-|--------|-------|---------|-------------|
-| `--glossary` | `-g` | None | Path to a glossary file for transcript correction |
-| `--parallel-workers` | `-p` | 15 | Maximum parallel workers for chunk processing |
-
-### Examples
-
-```bash
-# Basic transcription
-transcribe meeting.mp3 meeting-transcript.txt
-
-# Output file defaults to input filename with .txt extension
-transcribe podcast-episode.m4a
-
-# With glossary correction
-transcribe meeting.mp3 transcript.txt --glossary company-terms.txt
-
-# Long recording with custom parallelization
-transcribe 2hour-webinar.m4a output.txt -g glossary.txt -p 10
-```
-
 ## Glossary-Based Correction
 
 When you provide a glossary file with `--glossary`, the tool will:
@@ -131,9 +121,12 @@ People:
 - John Smith (CEO)
 - Sarah Johnson (CTO)
 
-Technical Terms:
-- Kubernetes (often misheard as "Cooper Netties")
-- OAuth (not "Oh Auth")
+OR
+
+| Term | Full Name | Description |
+|------|-----------|-------------|
+| **HCP** | Hearing Care Professional | Audiologist, dispenser, or fitter |
+| **HAW** | Hearing Aid Wearer | End-user/patient/consumer |
 ```
 
 **Or any other format** — JSON, Markdown tables, prose descriptions, etc.
@@ -149,17 +142,6 @@ For recordings longer than ~23 minutes, the tool automatically:
 
 This significantly speeds up processing of long recordings.
 
-## Supported Audio Formats
-
-- MP3 (.mp3)
-- MP4 Audio (.m4a, .mp4)
-- WAV (.wav)
-- AAC (.aac)
-- OGG (.ogg)
-- FLAC (.flac)
-- WebM (.webm)
-- And more...
-
 ## Output Format
 
 The tool saves transcriptions as plain text files, including:
@@ -171,47 +153,6 @@ Example output:
 ```
 [0.00s - 5.23s] Speaker 1: Welcome to today's meeting.
 [5.45s - 12.10s] Speaker 2: Thanks, let's start with the Q4 review.
-```
-
-## Error Handling
-
-The tool will display clear error messages for:
-- Missing environment variables
-- Audio file not found
-- Unsupported file formats
-- API request failures
-
-For glossary correction, the tool includes retry logic:
-- 3 attempts with exponential backoff (2s, 4s, 8s)
-- Falls back to uncorrected transcript if all retries fail
-
-## Uninstallation
-
-```bash
-# If installed via uv tool
-uv tool uninstall transcriber
-
-# If installed via pip/uv pip
-uv pip uninstall transcriber
-# or
-pip uninstall transcriber
-```
-
-## Versioning
-
-This project uses [Semantic Versioning](https://semver.org/). Versions are tracked via git tags.
-
-### To release a new version:
-
-1. Update version in `pyproject.toml` and `transcriber.py`
-2. Commit the changes: `git commit -am "Bump version to X.Y.Z"`
-3. Create a git tag: `git tag vX.Y.Z`
-4. Push with tags: `git push && git push --tags`
-
-Users can then install a specific version:
-
-```bash
-uv tool install git+https://github.com/Deloitte-Nordics/transcriber.git@vX.Y.Z
 ```
 
 ## Requirements

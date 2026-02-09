@@ -19,7 +19,7 @@ OUTPUT:
 Return ONLY the corrected transcript, preserving the exact same format. Do not add explanations, notes, or any other text.
 
 GLOSSARY:
-{glossary}
+{{glossary}}
 
 TRANSCRIPT TO CORRECT:
-{transcript}
+{{transcript}}

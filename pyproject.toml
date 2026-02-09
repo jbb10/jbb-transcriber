@@ -36,12 +36,13 @@ transcribe = "transcriber:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
-include = ["transcriber.py", "correction_prompt.txt"]
+include = ["transcriber.py", "correction_prompt.md", "synthesis_prompt.md"]
 
 [tool.hatch.build.targets.sdist]
 include = [
     "transcriber.py",
-    "correction_prompt.txt",
+    "correction_prompt.md",
+    "synthesis_prompt.md",
     "README.md",
     "pyproject.toml",
 ]

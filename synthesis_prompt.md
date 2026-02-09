@@ -25,4 +25,4 @@ You are an expert business writer. Convert the following meeting transcript into
 
 Now produce the document from this transcript:
 
-[PASTE TRANSCRIPT HERE]
+{{transcript}}

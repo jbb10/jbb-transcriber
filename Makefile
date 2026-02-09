@@ -1,4 +1,4 @@
-.PHONY: install install-dev test test-fast test-negative build clean lint fix help
+.PHONY: install install-dev test test-fast test-negative build clean lint fix release help
 
 help:
 	@echo "Available targets:"
@@ -11,6 +11,7 @@ help:
 	@echo "  clean        - Remove build artifacts and caches"
 	@echo "  lint         - Check code (ruff + pyright)"
 	@echo "  fix          - Auto-fix code style issues"
+	@echo "  release      - Release a new version (auto-detects bump from commits)"
 
 install:
 	uv pip install -e .
@@ -45,3 +46,6 @@ lint:
 fix:
 	uv run ruff check --fix .
 	uv run ruff format .
+
+release:
+	./scripts/release.sh

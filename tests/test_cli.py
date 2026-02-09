@@ -185,6 +185,7 @@ class TestCLIErrorHandling:
         assert result.returncode == 0
         assert "transcribe" in result.stdout.lower() or "audio" in result.stdout.lower()
         assert "--glossary" in result.stdout
+        assert "--synthesise" in result.stdout
 
     def test_cli_parallel_workers_option(
         self, short_audio_file, temp_output_file, azure_transcribe_config
@@ -211,3 +212,127 @@ class TestCLIErrorHandling:
         )
 
         assert result.returncode == 0, f"CLI with --parallel-workers failed: {result.stderr}"
+
+
+class TestCLIWithSynthesis:
+    """Tests for CLI with synthesis generation."""
+
+    def test_cli_with_synthesise(
+        self, short_audio_file, temp_output_file, azure_text_config
+    ):
+        """--synthesise flag generates synthesis document."""
+        import shutil
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_audio = os.path.join(temp_dir, "test_audio.mp3")
+            shutil.copy(short_audio_file, temp_audio)
+
+            transcript_output = os.path.join(temp_dir, "test_audio.txt")
+            expected_synthesis = os.path.join(temp_dir, "test_audio_synthesis.md")
+
+            env = os.environ.copy()
+            env["AZURE_TRANSCRIBE_API_KEY"] = azure_text_config["transcribe_key"]
+            env["AZURE_TRANSCRIBE_URL"] = azure_text_config["transcribe_url"]
+            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
+            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "transcriber",
+                    temp_audio,
+                    "--synthesise",
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+
+            assert result.returncode == 0, f"CLI with --synthesise failed: {result.stderr}"
+
+            # Both transcript and synthesis should exist
+            assert os.path.exists(transcript_output), "Transcript file should be created"
+            assert os.path.exists(expected_synthesis), "Synthesis file should be created"
+
+            # Synthesis should have content
+            with open(expected_synthesis, encoding="utf-8") as f:
+                synthesis_content = f.read()
+            assert len(synthesis_content) > 0, "Synthesis file should have content"
+
+    def test_cli_synthesise_short_flag(
+        self, short_audio_file, azure_text_config
+    ):
+        """-s short flag for synthesise works."""
+        import shutil
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_audio = os.path.join(temp_dir, "test_audio.mp3")
+            shutil.copy(short_audio_file, temp_audio)
+
+            expected_synthesis = os.path.join(temp_dir, "test_audio_synthesis.md")
+
+            env = os.environ.copy()
+            env["AZURE_TRANSCRIBE_API_KEY"] = azure_text_config["transcribe_key"]
+            env["AZURE_TRANSCRIBE_URL"] = azure_text_config["transcribe_url"]
+            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
+            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "transcriber",
+                    temp_audio,
+                    "-s",
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+
+            assert result.returncode == 0, f"CLI with -s flag failed: {result.stderr}"
+            assert os.path.exists(expected_synthesis), "Synthesis file should be created with -s flag"
+
+    def test_cli_glossary_and_synthesise(
+        self, short_audio_file, azure_text_config, sample_glossary
+    ):
+        """--glossary and --synthesise work together."""
+        import shutil
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_audio = os.path.join(temp_dir, "test_audio.mp3")
+            shutil.copy(short_audio_file, temp_audio)
+
+            transcript_output = os.path.join(temp_dir, "test_audio.txt")
+            expected_synthesis = os.path.join(temp_dir, "test_audio_synthesis.md")
+
+            env = os.environ.copy()
+            env["AZURE_TRANSCRIBE_API_KEY"] = azure_text_config["transcribe_key"]
+            env["AZURE_TRANSCRIBE_URL"] = azure_text_config["transcribe_url"]
+            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
+            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "transcriber",
+                    temp_audio,
+                    "--glossary",
+                    sample_glossary,
+                    "--synthesise",
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=900,  # Longer timeout for transcription + correction + synthesis
+            )
+
+            assert result.returncode == 0, f"CLI with glossary and synthesise failed: {result.stderr}"
+
+            # Both outputs should exist
+            assert os.path.exists(transcript_output), "Transcript file should be created"
+            assert os.path.exists(expected_synthesis), "Synthesis file should be created"

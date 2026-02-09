@@ -400,16 +400,33 @@ def load_glossary(glossary_path: str) -> str:
 def load_correction_prompt() -> str:
     """Load the correction prompt template from package data."""
     try:
-        return files("transcriber").joinpath("correction_prompt.txt").read_text(encoding="utf-8")
+        return files("transcriber").joinpath("correction_prompt.md").read_text(encoding="utf-8")
     except (FileNotFoundError, TypeError):
         # Fallback for development: try loading from script directory
         script_dir = Path(__file__).parent
-        prompt_path = script_dir / "correction_prompt.txt"
+        prompt_path = script_dir / "correction_prompt.md"
         try:
             with open(prompt_path, encoding="utf-8") as f:
                 return f.read()
         except OSError as e:
             log(f"Error: Could not read correction prompt file: {e}")
+            log(f"Expected at: {prompt_path}")
+            sys.exit(1)
+
+
+def load_synthesis_prompt() -> str:
+    """Load the synthesis prompt template from package data."""
+    try:
+        return files("transcriber").joinpath("synthesis_prompt.md").read_text(encoding="utf-8")
+    except (FileNotFoundError, TypeError):
+        # Fallback for development: try loading from script directory
+        script_dir = Path(__file__).parent
+        prompt_path = script_dir / "synthesis_prompt.md"
+        try:
+            with open(prompt_path, encoding="utf-8") as f:
+                return f.read()
+        except OSError as e:
+            log(f"Error: Could not read synthesis prompt file: {e}")
             log(f"Expected at: {prompt_path}")
             sys.exit(1)
 
@@ -429,7 +446,9 @@ def correct_with_glossary(
         Corrected transcript, or original transcript if correction fails
     """
     prompt_template = load_correction_prompt()
-    prompt = prompt_template.format(glossary=glossary_text, transcript=transcript)
+    prompt = prompt_template.replace("{{glossary}}", glossary_text).replace(
+        "{{transcript}}", transcript
+    )
 
     headers = {"api-key": config["text_key"], "Content-Type": "application/json"}
 
@@ -477,6 +496,71 @@ def correct_with_glossary(
     log(f"Warning: Glossary correction failed after {max_retries} attempts: {last_error}")
     log("Falling back to uncorrected transcript for this segment")
     return transcript
+
+
+def synthesise_transcript(
+    transcript: str, config: dict[str, str], max_retries: int = 3
+) -> str:
+    """Generate a synthesis document from transcript using LLM.
+
+    Args:
+        transcript: The transcribed (and optionally corrected) text
+        config: Config dict with 'text_key' and 'text_url'
+        max_retries: Number of retry attempts with exponential backoff
+
+    Returns:
+        Synthesised markdown document
+
+    Raises:
+        RuntimeError: If synthesis fails after all retries
+    """
+    prompt_template = load_synthesis_prompt()
+    prompt = prompt_template.replace("{{transcript}}", transcript)
+
+    headers = {"api-key": config["text_key"], "Content-Type": "application/json"}
+
+    data = {
+        "model": "gpt-5.1",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.3,  # Slightly higher for more natural writing
+    }
+
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                backoff = 2**attempt  # 2s, 4s, 8s
+                log(f"Retry attempt {attempt + 1}/{max_retries} after {backoff}s backoff...")
+                time.sleep(backoff)
+
+            response = requests.post(
+                config["text_url"],
+                headers=headers,
+                json=data,
+                timeout=300,  # 5 minute timeout
+            )
+
+            response.raise_for_status()
+            result = response.json()
+
+            # Extract the synthesis from the response
+            if "choices" in result and len(result["choices"]) > 0:
+                synthesis = result["choices"][0].get("message", {}).get("content", "")
+                if synthesis.strip():
+                    return synthesis.strip()
+
+            log("Warning: Unexpected response format from synthesis API")
+            last_error = "Unexpected response format"
+
+        except requests.exceptions.Timeout:
+            last_error = "Request timed out"
+            log(f"Warning: Synthesis request timed out (attempt {attempt + 1}/{max_retries})")
+        except requests.exceptions.RequestException as e:
+            last_error = str(e)
+            log(f"Warning: Synthesis request failed (attempt {attempt + 1}/{max_retries}): {e}")
+
+    # All retries failed
+    raise RuntimeError(f"Synthesis failed after {max_retries} attempts: {last_error}")
 
 
 def process_chunk(
@@ -527,8 +611,8 @@ def main() -> None:
 Environment Variables:
   AZURE_TRANSCRIBE_API_KEY    Your Azure OpenAI API key for transcription
   AZURE_TRANSCRIBE_URL        Your Azure OpenAI endpoint URL for transcription
-  AZURE_TEXT_API_KEY          Your Azure OpenAI API key for text LLM (required with --glossary)
-  AZURE_TEXT_URL              Your Azure OpenAI endpoint URL for text LLM (required with --glossary)
+  AZURE_TEXT_API_KEY          Your Azure OpenAI API key for text LLM (required with --glossary or --synthesise)
+  AZURE_TEXT_URL              Your Azure OpenAI endpoint URL for text LLM (required with --glossary or --synthesise)
 
 Example:
   transcribe audio.mp3 transcript.txt
@@ -539,6 +623,11 @@ Example:
 With glossary correction:
   transcribe audio.mp3 transcript.txt --glossary terms.txt
   transcribe long_recording.m4a output.txt --glossary company_terms.txt --parallel-workers 10
+
+With synthesis:
+  transcribe meeting.mp4 --synthesise
+  transcribe meeting.mp4 --glossary terms.txt --synthesise
+  (creates both meeting.txt and meeting_synthesis.md)
 
 Note: Files longer than 25 minutes will be automatically split into chunks.
         """,
@@ -557,6 +646,13 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
         "--glossary",
         "-g",
         help="Path to glossary file with terms/names/acronyms for transcript correction",
+    )
+
+    parser.add_argument(
+        "--synthesise",
+        "-s",
+        action="store_true",
+        help="Generate a synthesis document (markdown) summarising the transcript",
     )
 
     parser.add_argument(
@@ -583,8 +679,8 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
         glossary_text = load_glossary(args.glossary)
         log(f"Loaded glossary from: {args.glossary}")
 
-    # Get configuration (require text API if glossary is used)
-    config = get_config(require_text_api=bool(args.glossary))
+    # Get configuration (require text API if glossary or synthesise is used)
+    config = get_config(require_text_api=bool(args.glossary) or args.synthesise)
 
     # Validate input file
     validate_audio_file(args.audio_file)
@@ -635,8 +731,8 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
 
                 # Combine all transcriptions in correct order
                 all_transcriptions = [results[i] for i in range(len(chunks))]
-                combined = "\n".join(all_transcriptions)
-                write_output(combined, args.output_file)
+                final_transcript = "\n".join(all_transcriptions)
+                write_output(final_transcript, args.output_file)
             finally:
                 # Clean up chunks
                 log("Cleaning up temporary audio files...")
@@ -648,16 +744,28 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
                 log("Temporary files cleaned up")
         else:
             # Transcribe single file
-            transcription = transcribe_audio(
+            final_transcript = transcribe_audio(
                 converted_file, config["transcribe_key"], config["transcribe_url"]
             )
 
             # Apply glossary correction if provided
             if glossary_text:
                 log("Applying glossary correction...")
-                transcription = correct_with_glossary(transcription, glossary_text, config)
+                final_transcript = correct_with_glossary(final_transcript, glossary_text, config)
 
-            write_output(transcription, args.output_file)
+            write_output(final_transcript, args.output_file)
+
+        # Generate synthesis if requested
+        if args.synthesise:
+            output_stem = Path(args.output_file).with_suffix("")
+            synthesis_output = str(output_stem) + "_synthesis.md"
+            log("Generating synthesis document...")
+            try:
+                synthesis = synthesise_transcript(final_transcript, config)
+                write_output(synthesis, synthesis_output)
+            except RuntimeError as e:
+                log(f"Warning: {e}")
+                log("Transcript was saved successfully, but synthesis could not be generated.")
     finally:
         # Clean up converted file if we created one
         if temp_converted and os.path.exists(converted_file):
