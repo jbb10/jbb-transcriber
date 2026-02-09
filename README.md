@@ -2,12 +2,13 @@
 
 A command-line tool for transcribing audio and video files to text.
 
-> **Note:** Currently, only **Azure OpenAI** is supported. Other AI providers may be added in the future.
+> **Note:** Supports both **Azure OpenAI** (cloud) and **local Whisper** (offline) transcription.
 
 ## Features
 
 - Supports almost any audio and video format you can think of (powered by ffmpeg)
-- Automatic speaker diarization and timestamps
+- **Local transcription** — Use OpenAI Whisper for offline, private transcription (no API needed)
+- Automatic speaker diarization and timestamps (Azure mode)
 - **Glossary-based correction** — Use a custom glossary to fix industry terms, names, and acronyms
 - **Parallel processing** — Long recordings are split into chunks and processed in parallel
 - Simple command-line interface
@@ -23,13 +24,16 @@ transcribe <audio_file> [output_file] [options]
 
 | Option | Short | Default | Description |
 |--------|-------|---------|-------------|
+| `--local` | `-l` | Off | Use local Whisper model instead of Azure API |
+| `--model` | | `base` | Whisper model size (only with `--local`) |
+| `--language` | | Auto | Language code for transcription (e.g., 'en', 'ja') |
 | `--glossary` | `-g` | None | Path to a glossary file for transcript correction |
 | `--parallel-workers` | `-p` | 15 | Maximum parallel workers for chunk processing |
 
 ### Examples
 
 ```bash
-# Basic transcription
+# Azure transcription (requires API credentials)
 transcribe meeting.mp3 meeting-transcript.txt
 
 # Output file defaults to input filename with .txt extension
@@ -40,6 +44,15 @@ transcribe meeting.mp3 transcript.txt --glossary company-terms.txt
 
 # Long recording with custom parallelization
 transcribe 2hour-webinar.m4a output.txt -g glossary.txt -p 10
+
+# Local transcription (no API needed)
+transcribe --local meeting.mp3
+
+# Local with specific model and language
+transcribe --local --model medium --language en interview.wav
+
+# Local transcription with cloud-based glossary correction
+transcribe --local meeting.mp3 -g terms.txt
 ```
 
 ## Installation
@@ -52,10 +65,24 @@ uv tool install git+https://github.com/Deloitte-Nordics/transcriber.git
 
 This installs `transcribe` as a global command available from anywhere.
 
+### Install with local Whisper support
+
+```bash
+uv tool install --with openai-whisper git+https://github.com/Deloitte-Nordics/transcriber.git
+```
+
+This installs Whisper and its dependencies (including PyTorch) for offline transcription.
+
 ### Run without installing (uvx)
 
 ```bash
 uvx --from git+https://github.com/Deloitte-Nordics/transcriber.git transcribe audio.mp3
+```
+
+### Run locally with Whisper support (uvx)
+
+```bash
+uvx --with openai-whisper --from git+https://github.com/Deloitte-Nordics/transcriber.git transcribe --local audio.mp3
 ```
 
 ## Configuration
@@ -92,6 +119,41 @@ Then reload your shell configuration:
 ```bash
 source ~/.zshrc
 ```
+
+## Local Transcription Mode
+
+Use the `--local` flag to transcribe audio offline using OpenAI's Whisper model. No API credentials are needed for transcription (though glossary correction and synthesis still require Azure LLM credentials).
+
+### Available Models
+
+| Model | Size | Speed | Best For |
+|-------|------|-------|----------|
+| `tiny` | 39 MB | Fastest | Quick drafts, testing |
+| `base` | 74 MB | Fast | Default — good balance of speed and accuracy |
+| `small` | 244 MB | Medium | Better accuracy for clear audio |
+| `medium` | 769 MB | Slow | High accuracy, multiple languages |
+| `large-v3` | 1.55 GB | Slowest | Best accuracy, all languages |
+| `turbo` | 809 MB | Fast | Near-large accuracy at much higher speed |
+
+> **Tip:** English-only models (`tiny.en`, `base.en`, `small.en`, `medium.en`) are faster and more accurate for English-only audio.
+
+> **Note:** Models are downloaded automatically on first use and cached locally (~/.cache/whisper/).
+
+### Language Support
+
+By default, Whisper auto-detects the language. For better accuracy, specify the language explicitly:
+
+```bash
+transcribe --local --language en meeting.mp3    # English
+transcribe --local --language ja interview.wav   # Japanese
+transcribe --local --language de recording.m4a   # German
+```
+
+### Limitations
+
+- **No speaker diarization** — Local mode does not identify speakers (output shows timestamps only)
+- **GPU recommended** — Large models benefit from CUDA GPU; CPU works but is slower
+- **First run downloads model** — Initial use of a model downloads it (may take a few minutes)
 
 ## Glossary-Based Correction
 
@@ -145,15 +207,23 @@ This significantly speeds up processing of long recordings.
 ## Output Format
 
 The tool saves transcriptions as plain text files, including:
-- Speaker diarization (speaker labels)
+- Speaker diarization (speaker labels, Azure mode only)
 - Timestamps
 - Complete transcription text
 
-Example output:
+Example output (Azure mode with speaker diarization):
 ```
 [0.00s - 5.23s] Speaker 1: Welcome to today's meeting.
 [5.45s - 12.10s] Speaker 2: Thanks, let's start with the Q4 review.
 ```
+
+### Local mode output
+
+When using `--local`, output includes timestamps but not speaker labels:
+- Timestamps
+- Complete transcription text
+
+Note: Speaker diarization is only available with Azure OpenAI transcription.
 
 ## Requirements
 
