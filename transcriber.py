@@ -14,18 +14,266 @@ import sys
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
+from types import ModuleType
 
 import av
 import requests
+
+# =============================================================================
+# Custom argparse types
+# =============================================================================
+
+
+def positive_int(value: str) -> int:
+    """Argparse type for positive integers (>= 1)."""
+    try:
+        ivalue = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid int value: '{value}'") from None
+    if ivalue < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, got {value}")
+    return ivalue
+
+
+# =============================================================================
+# Validated Configuration
+# =============================================================================
+
+
+@dataclass
+class ValidatedConfig:
+    """Validated configuration for transcription.
+
+    All fields are validated before the dataclass is created.
+    New parameters should be added here and validated in validate_config().
+    """
+
+    audio_file: Path
+    output_file: Path
+    glossary: Path | None
+    glossary_text: str | None
+    synthesise: bool
+    parallel_workers: int
+    # Environment variables
+    transcribe_api_key: str
+    transcribe_url: str
+    text_api_key: str | None
+    text_url: str | None
+    # Local mode configuration
+    local_mode: bool
+    whisper_model: str
+    language: str | None
+
+    def as_api_config(self) -> dict[str, str]:
+        """Return API credentials as a dict for backward compatibility."""
+        config: dict[str, str] = {
+            "transcribe_key": self.transcribe_api_key,
+            "transcribe_url": self.transcribe_url,
+        }
+        if self.text_api_key:
+            config["text_key"] = self.text_api_key
+        if self.text_url:
+            config["text_url"] = self.text_url
+        return config
+
+
+def _probe_audio_stream(file_path: Path) -> tuple[bool, str | None]:
+    """Check if a file has an audio stream using PyAV.
+
+    Returns:
+        Tuple of (has_audio_stream, error_message).
+        If has_audio_stream is True, error_message is None.
+    """
+    try:
+        with av.open(str(file_path)) as container:
+            for stream in container.streams:
+                if stream.type == "audio":
+                    return True, None
+            return False, "No audio stream found in file"
+    except av.error.FileNotFoundError:  # type: ignore[attr-defined]
+        return False, f"File not found: {file_path}"
+    except av.error.InvalidDataError:  # type: ignore[attr-defined]
+        return False, f"Invalid or corrupted media file: {file_path}"
+    except Exception as e:
+        return False, f"Could not read media file: {e}"
+
+
+def validate_config(args: argparse.Namespace) -> ValidatedConfig:
+    """Validate all CLI arguments and environment variables.
+
+    This function collects ALL validation errors before exiting,
+    so users can fix everything at once.
+
+    Args:
+        args: Parsed argparse namespace
+
+    Returns:
+        ValidatedConfig with all validated values
+
+    Raises:
+        SystemExit: If any validation fails
+    """
+    errors: list[str] = []
+
+    # Derive output path if not provided
+    if args.output_file is None:
+        output_file = Path(args.audio_file).with_suffix(".txt")
+    else:
+        output_file = Path(args.output_file)
+
+    audio_file = Path(args.audio_file)
+
+    # --- Validate parallel_workers ---
+    if args.parallel_workers > 100:
+        errors.append(f"--parallel-workers cannot exceed 100, got {args.parallel_workers}")
+
+    # --- Validate audio file exists ---
+    if not audio_file.exists():
+        errors.append(f"Audio file not found: {audio_file}")
+    elif not audio_file.is_file():
+        errors.append(f"Audio path is not a file: {audio_file}")
+    else:
+        # --- Validate audio file has audio stream ---
+        has_audio, audio_error = _probe_audio_stream(audio_file)
+        if not has_audio:
+            errors.append(audio_error or f"No audio stream in: {audio_file}")
+
+    # --- Validate output directory exists and is writable ---
+    output_dir = output_file.parent
+    if output_dir and str(output_dir) != ".":
+        if not output_dir.exists():
+            errors.append(f"Output directory does not exist: {output_dir}")
+        elif not os.access(output_dir, os.W_OK):
+            errors.append(f"Output directory is not writable: {output_dir}")
+
+    # --- Validate glossary file if provided ---
+    glossary_path: Path | None = None
+    glossary_text: str | None = None
+    if args.glossary:
+        glossary_path = Path(args.glossary)
+        if not glossary_path.exists():
+            errors.append(f"Glossary file not found: {glossary_path}")
+        elif not glossary_path.is_file():
+            errors.append(f"Glossary path is not a file: {glossary_path}")
+
+    # --- Validate environment variables ---
+    transcribe_api_key = os.getenv("AZURE_TRANSCRIBE_API_KEY")
+    transcribe_url = os.getenv("AZURE_TRANSCRIBE_URL")
+    text_api_key: str | None = None
+    text_url: str | None = None
+
+    if not transcribe_api_key:
+        errors.append(
+            "AZURE_TRANSCRIBE_API_KEY environment variable is not set. "
+            'Add to ~/.zshrc: export AZURE_TRANSCRIBE_API_KEY="your-api-key"'
+        )
+
+    if not transcribe_url:
+        errors.append(
+            "AZURE_TRANSCRIBE_URL environment variable is not set. "
+            'Add to ~/.zshrc: export AZURE_TRANSCRIBE_URL="your-endpoint-url"'
+        )
+
+    # Text API required if glossary or synthesise is used
+    require_text_api = bool(args.glossary) or args.synthesise
+
+    if require_text_api:
+        text_api_key = os.getenv("AZURE_TEXT_API_KEY")
+        text_url = os.getenv("AZURE_TEXT_URL")
+
+        feature = "--glossary" if args.glossary else "--synthesise"
+
+        if not text_api_key:
+            errors.append(
+                f"AZURE_TEXT_API_KEY environment variable is not set (required for {feature}). "
+                'Add to ~/.zshrc: export AZURE_TEXT_API_KEY="your-api-key"'
+            )
+
+        if not text_url:
+            errors.append(
+                f"AZURE_TEXT_URL environment variable is not set (required for {feature}). "
+                'Add to ~/.zshrc: export AZURE_TEXT_URL="your-endpoint-url"'
+            )
+
+    # --- Exit if any errors ---
+    if errors:
+        for err in errors:
+            log(f"Error: {err}")
+        sys.exit(1)
+
+    # --- Load glossary text (after validation passed) ---
+    if glossary_path:
+        try:
+            glossary_text = glossary_path.read_text(encoding="utf-8")
+            log(f"Loaded glossary from: {glossary_path}")
+        except OSError as e:
+            log(f"Error: Could not read glossary file: {e}")
+            sys.exit(1)
+
+    # Log audio file info
+    _log_audio_file_info(audio_file)
+
+    return ValidatedConfig(
+        audio_file=audio_file,
+        output_file=output_file,
+        glossary=glossary_path,
+        glossary_text=glossary_text,
+        synthesise=args.synthesise,
+        parallel_workers=args.parallel_workers,
+        transcribe_api_key=transcribe_api_key,  # type: ignore[arg-type]
+        transcribe_url=transcribe_url,  # type: ignore[arg-type]
+        text_api_key=text_api_key,
+        text_url=text_url,
+        local_mode=args.local,
+        whisper_model=args.model,
+        language=args.language,
+    )
+
+
+def _log_audio_file_info(file_path: Path) -> None:
+    """Log information about the audio file format."""
+    # Formats supported by the API
+    api_supported = {".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".wav", ".webm"}
+    # Additional audio formats we can convert
+    audio_convertible = {".aac", ".ogg", ".flac", ".wma", ".opus", ".aiff", ".aif"}
+    # Video formats we can extract audio from
+    video_convertible = {".avi", ".mov", ".mkv", ".flv", ".wmv", ".webm", ".3gp", ".mts", ".m2ts"}
+
+    file_ext = file_path.suffix.lower()
+
+    if file_ext in api_supported:
+        log(f"File format {file_ext} is directly supported by the API")
+    elif file_ext in audio_convertible:
+        log(f"Audio file {file_ext} will be converted to a supported format")
+    elif file_ext in video_convertible or file_ext == ".mp4":
+        log(f"Video file {file_ext} detected - audio will be extracted")
+    else:
+        log(f"File extension '{file_ext}' is not recognized.")
+        log("Attempting to convert anyway...")
+        log(f"API supports: {', '.join(sorted(api_supported))}")
 
 
 def log(message: str) -> None:
     """Print timestamped log message to stderr."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] {message}", file=sys.stderr)
+
+
+def import_whisper() -> ModuleType:
+    """Lazily import Whisper, with helpful error if not installed."""
+    try:
+        import whisper  # type: ignore[import-not-found]
+
+        return whisper
+    except ImportError:
+        log("Error: openai-whisper is not installed.")
+        log("Install it with: uv tool install --with openai-whisper transcriber")
+        log("  or: pip install openai-whisper")
+        sys.exit(1)
 
 
 def get_config(require_text_api: bool = False) -> dict[str, str]:
@@ -659,36 +907,58 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
     parser.add_argument(
         "--parallel-workers",
         "-p",
-        type=int,
+        type=positive_int,
         default=15,
-        help="Maximum number of parallel workers for processing chunks (default: 15)",
+        help="Maximum number of parallel workers for processing chunks (default: 15, max: 100)",
+    )
+
+    parser.add_argument(
+        "--local",
+        "-l",
+        action="store_true",
+        help="Use local Whisper model instead of Azure OpenAI "
+        "(requires --model to specify which model)",
+    )
+
+    parser.add_argument(
+        "--model",
+        default="base",
+        choices=[
+            "tiny",
+            "tiny.en",
+            "base",
+            "base.en",
+            "small",
+            "small.en",
+            "medium",
+            "medium.en",
+            "large",
+            "large-v1",
+            "large-v2",
+            "large-v3",
+            "turbo",
+        ],
+        help="Whisper model to use with local mode (default: base). "
+        "Valid models: tiny, tiny.en, base, base.en, small, small.en, medium, medium.en, "
+        "large, large-v1, large-v2, large-v3, turbo",
+    )
+
+    parser.add_argument(
+        "--language",
+        default=None,
+        help="Language code for transcription (e.g., 'en', 'ja', 'de'). "
+        "If not specified, language will be auto-detected.",
     )
 
     args = parser.parse_args()
 
-    # If output file not provided, use input filename with .txt extension
-    if args.output_file is None:
-        input_path = Path(args.audio_file)
-        args.output_file = str(input_path.with_suffix(".txt"))
-
-    # Validate glossary file if provided
-    glossary_text = None
-    if args.glossary:
-        if not os.path.exists(args.glossary):
-            log(f"Error: Glossary file not found: {args.glossary}")
-            sys.exit(1)
-        glossary_text = load_glossary(args.glossary)
-        log(f"Loaded glossary from: {args.glossary}")
-
-    # Get configuration (require text API if glossary or synthesise is used)
-    config = get_config(require_text_api=bool(args.glossary) or args.synthesise)
-
-    # Validate input file
-    validate_audio_file(args.audio_file)
+    # Validate ALL parameters upfront before any work begins
+    validated = validate_config(args)
+    api_config = validated.as_api_config()
 
     # Convert to supported format if needed
-    converted_file = convert_to_supported_format(args.audio_file)
-    temp_converted = converted_file != args.audio_file
+    converted_file = convert_to_supported_format(str(validated.audio_file))
+    temp_converted = converted_file != str(validated.audio_file)
 
     try:
         # Check duration and split if necessary
@@ -708,14 +978,16 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
                 chunk_infos = [(i, chunk, i * chunk_duration) for i, chunk in enumerate(chunks)]
 
                 # Process chunks in parallel
-                num_workers = min(args.parallel_workers, len(chunks))
+                num_workers = min(validated.parallel_workers, len(chunks))
                 log(f"Processing {len(chunks)} chunks with {num_workers} parallel workers...")
 
                 results: dict[int, str] = {}
                 with ThreadPoolExecutor(max_workers=num_workers) as executor:
                     # Submit all tasks
                     future_to_index = {
-                        executor.submit(process_chunk, info, config, glossary_text): info[0]
+                        executor.submit(
+                            process_chunk, info, api_config, validated.glossary_text
+                        ): info[0]
                         for info in chunk_infos
                     }
 
@@ -733,7 +1005,7 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
                 # Combine all transcriptions in correct order
                 all_transcriptions = [results[i] for i in range(len(chunks))]
                 final_transcript = "\n".join(all_transcriptions)
-                write_output(final_transcript, args.output_file)
+                write_output(final_transcript, str(validated.output_file))
             finally:
                 # Clean up chunks
                 log("Cleaning up temporary audio files...")
@@ -746,23 +1018,25 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
         else:
             # Transcribe single file
             final_transcript = transcribe_audio(
-                converted_file, config["transcribe_key"], config["transcribe_url"]
+                converted_file, api_config["transcribe_key"], api_config["transcribe_url"]
             )
 
             # Apply glossary correction if provided
-            if glossary_text:
+            if validated.glossary_text:
                 log("Applying glossary correction...")
-                final_transcript = correct_with_glossary(final_transcript, glossary_text, config)
+                final_transcript = correct_with_glossary(
+                    final_transcript, validated.glossary_text, api_config
+                )
 
-            write_output(final_transcript, args.output_file)
+            write_output(final_transcript, str(validated.output_file))
 
         # Generate synthesis if requested
-        if args.synthesise:
-            output_stem = Path(args.output_file).with_suffix("")
+        if validated.synthesise:
+            output_stem = validated.output_file.with_suffix("")
             synthesis_output = str(output_stem) + "_synthesis.md"
             log("Generating synthesis document...")
             try:
-                synthesis = synthesise_transcript(final_transcript, config)
+                synthesis = synthesise_transcript(final_transcript, api_config)
                 write_output(synthesis, synthesis_output)
             except RuntimeError as e:
                 log(f"Warning: {e}")
