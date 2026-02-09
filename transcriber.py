@@ -276,6 +276,82 @@ def import_whisper() -> ModuleType:
         sys.exit(1)
 
 
+def format_whisper_output(segments: list[dict[str, object]], time_offset: int = 0) -> str:
+    """Format Whisper transcription segments into timestamped text.
+
+    Args:
+        segments: List of Whisper segment dicts with 'start', 'end', 'text' keys
+        time_offset: Offset in seconds to add to all timestamps (for chunked files)
+
+    Returns:
+        Formatted transcription with timestamps
+    """
+    output_lines: list[str] = []
+    for segment in segments:
+        start_val = segment.get("start", 0)
+        end_val = segment.get("end", 0)
+        start = float(start_val) if start_val is not None else 0.0  # type: ignore[arg-type]
+        end = float(end_val) if end_val is not None else 0.0  # type: ignore[arg-type]
+        start += time_offset
+        end += time_offset
+        text = str(segment.get("text", "")).strip()
+        if text:
+            output_lines.append(f"[{start:.2f}s - {end:.2f}s] {text}")
+    return "\n".join(output_lines)
+
+
+def transcribe_audio_local(
+    audio_file_path: str, config: ValidatedConfig, time_offset: int = 0
+) -> str:
+    """Transcribe audio using local Whisper model.
+
+    Args:
+        audio_file_path: Path to the audio file
+        config: Validated configuration with whisper_model and language
+        time_offset: Offset in seconds to add to all timestamps (for chunked files)
+
+    Returns:
+        Formatted transcription text with timestamps
+    """
+    whisper = import_whisper()
+
+    log(f"Loading Whisper model '{config.whisper_model}'...")
+
+    # Detect GPU availability (torch is a dependency of openai-whisper)
+    try:
+        import torch  # type: ignore[import-not-found]
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"  # type: ignore[union-attr,unknown-member-type]
+    except ImportError:
+        device = "cpu"
+    log(f"Using device: {device}")
+
+    model = whisper.load_model(config.whisper_model, device=device)
+    log("Model loaded successfully")
+
+    log("Transcribing with local Whisper model...")
+
+    transcribe_options: dict[str, object] = {}
+    if config.language:
+        transcribe_options["language"] = config.language
+        log(f"Language: {config.language}")
+    else:
+        log("Language: auto-detect")
+
+    result = model.transcribe(audio_file_path, **transcribe_options)
+
+    # Log detected language if auto-detected
+    if not config.language and "language" in result:
+        log(f"Detected language: {result['language']}")
+
+    segments = result.get("segments", [])
+    if not segments:
+        # Fallback to plain text if no segments
+        return result.get("text", "")
+
+    return format_whisper_output(segments, time_offset)
+
+
 def get_config(require_text_api: bool = False) -> dict[str, str]:
     """Get configuration from environment variables.
 

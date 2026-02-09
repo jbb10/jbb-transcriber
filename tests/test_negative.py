@@ -10,6 +10,7 @@ import tempfile
 import pytest
 
 from transcriber import (
+    format_whisper_output,
     get_config,
     import_whisper,
     positive_int,
@@ -414,3 +415,50 @@ class TestWhisperImport:
         captured = capsys.readouterr()
         assert "openai-whisper" in captured.err
         assert "uv tool install" in captured.err
+
+
+class TestLocalTranscription:
+    """Tests for local Whisper transcription functions."""
+
+    def test_format_whisper_output_basic(self):
+        """format_whisper_output formats segments with timestamps."""
+        segments = [
+            {"start": 0.0, "end": 5.23, "text": "Hello, welcome to the meeting."},
+            {"start": 5.23, "end": 10.50, "text": "Thank you for having me."},
+        ]
+        result = format_whisper_output(segments)
+        assert "[0.00s - 5.23s] Hello, welcome to the meeting." in result
+        assert "[5.23s - 10.50s] Thank you for having me." in result
+
+    def test_format_whisper_output_with_time_offset(self):
+        """format_whisper_output adds time offset to timestamps."""
+        segments = [
+            {"start": 0.0, "end": 5.0, "text": "Some text"},
+        ]
+        result = format_whisper_output(segments, time_offset=900)
+        assert "[900.00s - 905.00s] Some text" in result
+
+    def test_format_whisper_output_empty_segments(self):
+        """format_whisper_output handles empty segment list."""
+        result = format_whisper_output([])
+        assert result == ""
+
+    def test_format_whisper_output_strips_whitespace(self):
+        """format_whisper_output strips whitespace from segment text."""
+        segments = [
+            {"start": 0.0, "end": 5.0, "text": "  Hello world  "},
+        ]
+        result = format_whisper_output(segments)
+        assert "[0.00s - 5.00s] Hello world" in result
+
+    def test_format_whisper_output_skips_empty_text(self):
+        """format_whisper_output skips segments with empty text."""
+        segments = [
+            {"start": 0.0, "end": 1.0, "text": ""},
+            {"start": 1.0, "end": 2.0, "text": "Real content"},
+            {"start": 2.0, "end": 3.0, "text": "   "},
+        ]
+        result = format_whisper_output(segments)
+        lines = result.strip().split("\n")
+        assert len(lines) == 1
+        assert "Real content" in result
