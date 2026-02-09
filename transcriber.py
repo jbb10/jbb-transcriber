@@ -237,7 +237,11 @@ def split_audio_file(file_path: str, chunk_duration: int = 900) -> tuple[list[st
 
         for frame in input_container.decode(audio_stream):  # type: ignore[arg-type]
             # Calculate frame time in seconds
-            frame_time = float(frame.pts * frame.time_base) if frame.pts is not None else 0
+            frame_time = (
+                float(frame.pts * frame.time_base)  # type: ignore[operator,arg-type,union-attr]
+                if frame.pts is not None
+                else 0
+            )
 
             # Check if we need to start a new chunk
             if frame_time >= chunk_start_time + chunk_duration:
@@ -265,7 +269,7 @@ def split_audio_file(file_path: str, chunk_duration: int = 900) -> tuple[list[st
                 chunks.append(chunk_path)
                 output_container = av.open(chunk_path, mode="w")
                 # Create AAC output stream
-                output_stream = output_container.add_stream("aac", rate=16000)
+                output_stream = output_container.add_stream("aac", rate=16000)  # type: ignore[assignment]
                 output_stream.bit_rate = 128000
                 # Create resampler for consistent output format
                 resampler = av.AudioResampler(
@@ -276,7 +280,7 @@ def split_audio_file(file_path: str, chunk_duration: int = 900) -> tuple[list[st
 
             # Encode frame to output
             if resampler is not None and output_stream is not None:
-                resampled_frames = resampler.resample(frame)
+                resampled_frames = resampler.resample(frame)  # type: ignore[arg-type]
                 for resampled_frame in resampled_frames:
                     for packet in output_stream.encode(resampled_frame):
                         output_container.mux(packet)  # type: ignore[union-attr]
