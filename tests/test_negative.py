@@ -67,7 +67,6 @@ class TestValidateConfig:
             parallel_workers=15,
             local=False,
             model="base",
-            language=None,
         )
 
     def test_parallel_workers_too_high(self, mock_args, monkeypatch, capsys):
@@ -483,7 +482,6 @@ class TestLocalModeValidation:
             parallel_workers=15,
             local=True,
             model="base",
-            language=None,
         )
 
     def test_local_mode_no_azure_credentials_required(self, local_args, monkeypatch):

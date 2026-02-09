@@ -207,7 +207,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371 }
 wheels = [
@@ -1223,6 +1223,7 @@ version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "av" },
+    { name = "openai-whisper" },
     { name = "requests" },
 ]
 
@@ -1230,9 +1231,6 @@ dependencies = [
 test = [
     { name = "pytest" },
     { name = "python-dotenv" },
-]
-whisper = [
-    { name = "openai-whisper" },
 ]
 
 [package.dev-dependencies]
@@ -1246,7 +1244,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "av", specifier = ">=12.0.0" },
-    { name = "openai-whisper", marker = "extra == 'whisper'", specifier = ">=20231117" },
+    { name = "openai-whisper", specifier = ">=20231117" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
     { name = "python-dotenv", marker = "extra == 'test'", specifier = ">=1.0.0" },
     { name = "requests", specifier = ">=2.31.0" },

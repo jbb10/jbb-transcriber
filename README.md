@@ -10,6 +10,7 @@ A command-line tool for transcribing audio and video files to text.
 - **Local transcription** — Use OpenAI Whisper for offline, private transcription (no API needed)
 - Automatic speaker diarization and timestamps (Azure mode)
 - **Glossary-based correction** — Use a custom glossary to fix industry terms, names, and acronyms
+- **Synthesis** — Auto-generate a structured summary document from the transcript
 - **Parallel processing** — Long recordings are split into chunks and processed in parallel
 - Simple command-line interface
 - AI configured via environment variables
@@ -26,8 +27,8 @@ transcribe <audio_file> [output_file] [options]
 |--------|-------|---------|-------------|
 | `--local` | `-l` | Off | Use local Whisper model instead of Azure API |
 | `--model` | | `base` | Whisper model size (only with `--local`) |
-| `--language` | | Auto | Language code for transcription (e.g., 'en', 'ja') |
 | `--glossary` | `-g` | None | Path to a glossary file for transcript correction |
+| `--synthesise` | `-s` | Off | Generate a synthesis/summary document (markdown) |
 | `--parallel-workers` | `-p` | 15 | Maximum parallel workers for chunk processing |
 
 ### Examples
@@ -48,11 +49,18 @@ transcribe 2hour-webinar.m4a output.txt -g glossary.txt -p 10
 # Local transcription (no API needed)
 transcribe --local meeting.mp3
 
-# Local with specific model and language
-transcribe --local --model medium --language en interview.wav
+# Local with specific model
+transcribe --local --model medium interview.wav
 
 # Local transcription with cloud-based glossary correction
 transcribe --local meeting.mp3 -g terms.txt
+
+# Generate a synthesis/summary document
+transcribe meeting.mp3 --synthesise
+
+# Combine glossary correction and synthesis
+transcribe meeting.mp3 --glossary terms.txt --synthesise
+# (creates both meeting.txt and meeting_synthesis.md)
 ```
 
 ## Installation
@@ -63,26 +71,12 @@ transcribe --local meeting.mp3 -g terms.txt
 uv tool install git+https://github.com/Deloitte-Nordics/transcriber.git
 ```
 
-This installs `transcribe` as a global command available from anywhere.
-
-### Install with local Whisper support
-
-```bash
-uv tool install --with openai-whisper git+https://github.com/Deloitte-Nordics/transcriber.git
-```
-
-This installs Whisper and its dependencies (including PyTorch) for offline transcription.
+This installs `transcribe` as a global command available from anywhere, including local Whisper transcription support.
 
 ### Run without installing (uvx)
 
 ```bash
 uvx --from git+https://github.com/Deloitte-Nordics/transcriber.git transcribe audio.mp3
-```
-
-### Run locally with Whisper support (uvx)
-
-```bash
-uvx --with openai-whisper --from git+https://github.com/Deloitte-Nordics/transcriber.git transcribe --local audio.mp3
 ```
 
 ## Configuration
@@ -93,7 +87,7 @@ This tool requires Azure OpenAI Service with two model deployments:
 
 1. **Transcription model:** Deploy `gpt-4o-transcribe` (or newer) for audio transcription with speaker diarization.
 
-2. **Chat completion model** (only for glossary correction): Deploy any GPT-4 class model or better (e.g., `gpt-4o`, `gpt-4o-mini`). A smaller model like `gpt-4o-mini` is sufficient for this task.
+2. **Chat completion model** (for glossary correction and synthesis): Deploy any GPT-4 class model or better (e.g., `gpt-4o`, `gpt-4o-mini`). A smaller model like `gpt-4o-mini` is sufficient for this task.
 
 ### Environment Variables
 
@@ -104,7 +98,7 @@ Add the following environment variables to your `~/.zshrc` file:
 export AZURE_TRANSCRIBE_API_KEY="your-api-key-here"
 export AZURE_TRANSCRIBE_URL="https://your-endpoint.openai.azure.com/openai/deployments/<your-transcribe-deployment>/audio/transcriptions?api-version=2025-03-01-preview"
 
-# Required only when using --glossary for transcript correction
+# Required only when using --glossary or --synthesise
 export AZURE_TEXT_API_KEY="your-text-api-key-here"
 export AZURE_TEXT_URL="https://your-endpoint.openai.azure.com/openai/deployments/<your-chat-deployment>/chat/completions?api-version=2025-03-01-preview"
 ```
@@ -138,16 +132,6 @@ Use the `--local` flag to transcribe audio offline using OpenAI's Whisper model.
 > **Tip:** English-only models (`tiny.en`, `base.en`, `small.en`, `medium.en`) are faster and more accurate for English-only audio.
 
 > **Note:** Models are downloaded automatically on first use and cached locally (~/.cache/whisper/).
-
-### Language Support
-
-By default, Whisper auto-detects the language. For better accuracy, specify the language explicitly:
-
-```bash
-transcribe --local --language en meeting.mp3    # English
-transcribe --local --language ja interview.wav   # Japanese
-transcribe --local --language de recording.m4a   # German
-```
 
 ### Limitations
 
@@ -204,6 +188,20 @@ For recordings longer than ~23 minutes, the tool automatically:
 
 This significantly speeds up processing of long recordings.
 
+## Synthesis
+
+Use `--synthesise` (or `-s`) to automatically generate a structured summary of the transcript:
+
+```bash
+transcribe meeting.mp3 --synthesise
+transcribe --local meeting.mp3 -s
+transcribe meeting.mp3 --glossary terms.txt --synthesise
+```
+
+This creates an additional markdown file alongside the transcript (e.g., `meeting_synthesis.md`) containing a structured summary of the conversation.
+
+> **Note:** Synthesis requires Azure LLM credentials (`AZURE_TEXT_API_KEY` and `AZURE_TEXT_URL`), even when using `--local` for transcription.
+
 ## Output Format
 
 The tool saves transcriptions as plain text files, including:
@@ -230,4 +228,4 @@ Note: Speaker diarization is only available with Azure OpenAI transcription.
 - Python 3.10 or higher
 - Azure OpenAI Service with:
   - A transcription model deployment (e.g., gpt-4o-transcribe)
-  - A chat completion model deployment (only for glossary feature)
+  - A chat completion model deployment (for glossary and synthesis features)

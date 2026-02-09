@@ -66,7 +66,6 @@ class ValidatedConfig:
     # Local mode configuration
     local_mode: bool
     whisper_model: str
-    language: str | None
 
     def as_api_config(self) -> dict[str, str]:
         """Return API credentials as a dict for backward compatibility."""
@@ -213,7 +212,7 @@ def validate_config(args: argparse.Namespace) -> ValidatedConfig:
         except ImportError:
             errors.append(
                 "openai-whisper is not installed (required for --local mode). "
-                "Install with: uv tool install --with openai-whisper transcriber"
+                "Reinstall with: uv tool install transcriber"
             )
 
     # --- Exit if any errors ---
@@ -247,7 +246,6 @@ def validate_config(args: argparse.Namespace) -> ValidatedConfig:
         text_url=text_url,
         local_mode=args.local,
         whisper_model=args.model,
-        language=args.language,
     )
 
 
@@ -288,7 +286,7 @@ def import_whisper() -> ModuleType:
         return whisper
     except ImportError:
         log("Error: openai-whisper is not installed.")
-        log("Install it with: uv tool install --with openai-whisper transcriber")
+        log("Reinstall with: uv tool install transcriber")
         log("  or: pip install openai-whisper")
         sys.exit(1)
 
@@ -324,7 +322,7 @@ def transcribe_audio_local(
 
     Args:
         audio_file_path: Path to the audio file
-        config: Validated configuration with whisper_model and language
+        config: Validated configuration with whisper_model
         time_offset: Offset in seconds to add to all timestamps (for chunked files)
 
     Returns:
@@ -347,18 +345,12 @@ def transcribe_audio_local(
     log("Model loaded successfully")
 
     log("Transcribing with local Whisper model...")
+    log("Language: auto-detect")
 
-    transcribe_options: dict[str, object] = {}
-    if config.language:
-        transcribe_options["language"] = config.language
-        log(f"Language: {config.language}")
-    else:
-        log("Language: auto-detect")
+    result = model.transcribe(audio_file_path)
 
-    result = model.transcribe(audio_file_path, **transcribe_options)
-
-    # Log detected language if auto-detected
-    if not config.language and "language" in result:
+    # Log detected language
+    if "language" in result:
         log(f"Detected language: {result['language']}")
 
     segments = result.get("segments", [])
@@ -1034,13 +1026,6 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
         help="Whisper model to use with local mode (default: base). "
         "Valid models: tiny, tiny.en, base, base.en, small, small.en, medium, medium.en, "
         "large, large-v1, large-v2, large-v3, turbo",
-    )
-
-    parser.add_argument(
-        "--language",
-        default=None,
-        help="Language code for transcription (e.g., 'en', 'ja', 'de'). "
-        "If not specified, language will be auto-detected.",
     )
 
     args = parser.parse_args()
