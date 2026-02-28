@@ -1,6 +1,12 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [1.1.0] - 2026-02-28
+
+### Features
+- Add --synthesise-only flag to generate synthesis from existing transcript
+
+
 ## [1.0.0] - 2026-02-09
 
 ### Documentation
