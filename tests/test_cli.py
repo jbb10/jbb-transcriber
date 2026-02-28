@@ -336,3 +336,158 @@ class TestCLIWithSynthesis:
             # Both outputs should exist
             assert os.path.exists(transcript_output), "Transcript file should be created"
             assert os.path.exists(expected_synthesis), "Synthesis file should be created"
+
+
+class TestCLISynthesiseOnly:
+    """Tests for CLI --synthesise-only flag."""
+
+    def test_cli_synthesise_only(self, azure_text_config):
+        """--synthesise-only reads existing transcript and generates synthesis."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create a transcript file
+            transcript_path = os.path.join(temp_dir, "meeting.txt")
+            with open(transcript_path, "w", encoding="utf-8") as f:
+                f.write(
+                    "[0.00s - 10.00s] A: We decided to migrate.\n"
+                    "[10.00s - 20.00s] B: John will update CI.\n"
+                    "[20.00s - 30.00s] A: Any risks?\n"
+                    "[30.00s - 40.00s] B: Backwards compatibility.\n"
+                )
+
+            expected_synthesis = os.path.join(temp_dir, "meeting_synthesis.md")
+
+            env = os.environ.copy()
+            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
+            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "transcriber",
+                    transcript_path,
+                    "--synthesise-only",
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+
+            assert result.returncode == 0, f"CLI with --synthesise-only failed: {result.stderr}"
+            assert os.path.exists(expected_synthesis), "Synthesis file should be created"
+
+            with open(expected_synthesis, encoding="utf-8") as f:
+                synthesis_content = f.read()
+            assert len(synthesis_content) > 0, "Synthesis file should have content"
+
+    def test_cli_synthesise_only_short_flag(self, azure_text_config):
+        """-S short flag for synthesise-only works."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            transcript_path = os.path.join(temp_dir, "notes.txt")
+            with open(transcript_path, "w", encoding="utf-8") as f:
+                f.write("[0.00s - 10.00s] A: Let's discuss the roadmap.\n")
+
+            expected_synthesis = os.path.join(temp_dir, "notes_synthesis.md")
+
+            env = os.environ.copy()
+            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
+            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "transcriber",
+                    transcript_path,
+                    "-S",
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+
+            assert result.returncode == 0, f"CLI with -S flag failed: {result.stderr}"
+            assert os.path.exists(expected_synthesis), (
+                "Synthesis file should be created with -S flag"
+            )
+
+    def test_cli_synthesise_only_empty_file_fails(self, azure_text_config):
+        """--synthesise-only fails on empty transcript file."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            transcript_path = os.path.join(temp_dir, "empty.txt")
+            with open(transcript_path, "w", encoding="utf-8") as f:
+                f.write("")
+
+            env = os.environ.copy()
+            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
+            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "transcriber",
+                    transcript_path,
+                    "--synthesise-only",
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            assert result.returncode != 0, "Should fail on empty transcript file"
+            assert "empty" in result.stderr.lower()
+
+    def test_cli_synthesise_only_missing_file_fails(self):
+        """--synthesise-only fails for nonexistent transcript file."""
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "transcriber",
+                "/nonexistent/transcript.txt",
+                "--synthesise-only",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode != 0, "Should fail for missing transcript file"
+
+    def test_cli_synthesise_and_synthesise_only_conflict(self):
+        """--synthesise and --synthesise-only cannot be used together."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            transcript_path = os.path.join(temp_dir, "transcript.txt")
+            with open(transcript_path, "w", encoding="utf-8") as f:
+                f.write("Some content")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "transcriber",
+                    transcript_path,
+                    "--synthesise",
+                    "--synthesise-only",
+                ],
+                capture_output=True,
+                text=True,
+            )
+
+            assert result.returncode != 0, (
+                "Should fail when both --synthesise and --synthesise-only are used"
+            )
+
+    def test_cli_help_shows_synthesise_only(self):
+        """CLI --help mentions --synthesise-only."""
+        result = subprocess.run(
+            [sys.executable, "-m", "transcriber", "--help"],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0
+        assert "--synthesise-only" in result.stdout

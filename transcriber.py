@@ -57,6 +57,7 @@ class ValidatedConfig:
     glossary: Path | None
     glossary_text: str | None
     synthesise: bool
+    synthesise_only: bool
     parallel_workers: int
     # Environment variables
     transcribe_api_key: str
@@ -118,6 +119,12 @@ def validate_config(args: argparse.Namespace) -> ValidatedConfig:
     """
     errors: list[str] = []
 
+    # --- Handle --synthesise-only mode ---
+    synthesise_only = getattr(args, "synthesise_only", False)
+
+    if synthesise_only and args.synthesise:
+        errors.append("Cannot use --synthesise and --synthesise-only together")
+
     # Derive output path if not provided
     if args.output_file is None:
         output_file = Path(args.audio_file).with_suffix(".txt")
@@ -130,16 +137,24 @@ def validate_config(args: argparse.Namespace) -> ValidatedConfig:
     if args.parallel_workers > 100:
         errors.append(f"--parallel-workers cannot exceed 100, got {args.parallel_workers}")
 
-    # --- Validate audio file exists ---
-    if not audio_file.exists():
-        errors.append(f"Audio file not found: {audio_file}")
-    elif not audio_file.is_file():
-        errors.append(f"Audio path is not a file: {audio_file}")
+    if synthesise_only:
+        # In synthesise-only mode, the positional arg is a transcript file
+        transcript_file = audio_file
+        if not transcript_file.exists():
+            errors.append(f"Transcript file not found: {transcript_file}")
+        elif not transcript_file.is_file():
+            errors.append(f"Transcript path is not a file: {transcript_file}")
     else:
-        # --- Validate audio file has audio stream ---
-        has_audio, audio_error = _probe_audio_stream(audio_file)
-        if not has_audio:
-            errors.append(audio_error or f"No audio stream in: {audio_file}")
+        # --- Validate audio file exists ---
+        if not audio_file.exists():
+            errors.append(f"Audio file not found: {audio_file}")
+        elif not audio_file.is_file():
+            errors.append(f"Audio path is not a file: {audio_file}")
+        else:
+            # --- Validate audio file has audio stream ---
+            has_audio, audio_error = _probe_audio_stream(audio_file)
+            if not has_audio:
+                errors.append(audio_error or f"No audio stream in: {audio_file}")
 
     # --- Validate output directory exists and is writable ---
     output_dir = output_file.parent
@@ -166,7 +181,8 @@ def validate_config(args: argparse.Namespace) -> ValidatedConfig:
     text_url: str | None = None
 
     # Azure transcription credentials only needed when NOT using local mode
-    if not args.local:
+    # and NOT in synthesise-only mode
+    if not args.local and not synthesise_only:
         if not transcribe_api_key:
             errors.append(
                 "AZURE_TRANSCRIBE_API_KEY environment variable is not set. "
@@ -184,14 +200,19 @@ def validate_config(args: argparse.Namespace) -> ValidatedConfig:
         if not transcribe_url:
             transcribe_url = ""
 
-    # Text API required if glossary or synthesise is used
-    require_text_api = bool(args.glossary) or args.synthesise
+    # Text API required if glossary, synthesise, or synthesise-only is used
+    require_text_api = bool(args.glossary) or args.synthesise or synthesise_only
 
     if require_text_api:
         text_api_key = os.getenv("AZURE_TEXT_API_KEY")
         text_url = os.getenv("AZURE_TEXT_URL")
 
-        feature = "--glossary" if args.glossary else "--synthesise"
+        if args.glossary:
+            feature = "--glossary"
+        elif synthesise_only:
+            feature = "--synthesise-only"
+        else:
+            feature = "--synthesise"
 
         if not text_api_key:
             errors.append(
@@ -230,8 +251,9 @@ def validate_config(args: argparse.Namespace) -> ValidatedConfig:
             log(f"Error: Could not read glossary file: {e}")
             sys.exit(1)
 
-    # Log audio file info
-    _log_audio_file_info(audio_file)
+    # Log audio file info (skip in synthesise-only mode)
+    if not synthesise_only:
+        _log_audio_file_info(audio_file)
 
     return ValidatedConfig(
         audio_file=audio_file,
@@ -239,6 +261,7 @@ def validate_config(args: argparse.Namespace) -> ValidatedConfig:
         glossary=glossary_path,
         glossary_text=glossary_text,
         synthesise=args.synthesise,
+        synthesise_only=synthesise_only,
         parallel_workers=args.parallel_workers,
         transcribe_api_key=transcribe_api_key,  # type: ignore[arg-type]
         transcribe_url=transcribe_url,  # type: ignore[arg-type]
@@ -944,9 +967,9 @@ Environment Variables:
   AZURE_TRANSCRIBE_API_KEY    Your Azure OpenAI API key for transcription
   AZURE_TRANSCRIBE_URL        Your Azure OpenAI endpoint URL for transcription
   AZURE_TEXT_API_KEY          Your Azure OpenAI API key for text LLM
-                              (required with --glossary or --synthesise)
+                              (required with --glossary, --synthesise, or --synthesise-only)
   AZURE_TEXT_URL              Your Azure OpenAI endpoint URL for text LLM
-                              (required with --glossary or --synthesise)
+                              (required with --glossary, --synthesise, or --synthesise-only)
 
 Example:
   transcribe audio.mp3 transcript.txt
@@ -962,6 +985,10 @@ With synthesis:
   transcribe meeting.mp4 --synthesise
   transcribe meeting.mp4 --glossary terms.txt --synthesise
   (creates both meeting.txt and meeting_synthesis.md)
+
+Synthesise an existing transcript:
+  transcribe meeting.txt --synthesise-only
+  (reads meeting.txt and creates meeting_synthesis.md)
 
 Note: Files longer than 25 minutes will be automatically split into chunks.
         """,
@@ -987,6 +1014,13 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
         "-s",
         action="store_true",
         help="Generate a synthesis document (markdown) summarising the transcript",
+    )
+
+    parser.add_argument(
+        "--synthesise-only",
+        "-S",
+        action="store_true",
+        help="Generate a synthesis from an existing transcript file (skips transcription)",
     )
 
     parser.add_argument(
@@ -1033,6 +1067,32 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
     # Validate ALL parameters upfront before any work begins
     validated = validate_config(args)
     api_config = validated.as_api_config()
+
+    # Handle --synthesise-only mode: read transcript and generate synthesis
+    if validated.synthesise_only:
+        transcript_path = validated.audio_file  # positional arg is the transcript file
+        log(f"Reading existing transcript from: {transcript_path}")
+        try:
+            transcript_text = transcript_path.read_text(encoding="utf-8")
+        except OSError as e:
+            log(f"Error: Could not read transcript file: {e}")
+            sys.exit(1)
+
+        if not transcript_text.strip():
+            log("Error: Transcript file is empty")
+            sys.exit(1)
+
+        output_stem = transcript_path.with_suffix("")
+        synthesis_output = str(output_stem) + "_synthesis.md"
+        log("Generating synthesis document...")
+        try:
+            synthesis = synthesise_transcript(transcript_text, api_config)
+            write_output(synthesis, synthesis_output)
+        except RuntimeError as e:
+            log(f"Error: {e}")
+            sys.exit(1)
+        log("Synthesis complete!")
+        return
 
     # Convert to supported format if needed (needed for both local and Azure)
     converted_file = convert_to_supported_format(str(validated.audio_file))

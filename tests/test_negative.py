@@ -64,6 +64,7 @@ class TestValidateConfig:
             output_file=None,
             glossary=None,
             synthesise=False,
+            synthesise_only=False,
             parallel_workers=15,
             local=False,
             model="base",
@@ -157,6 +158,84 @@ class TestValidateConfig:
         captured = capsys.readouterr()
         assert "AZURE_TEXT_API_KEY" in captured.err
         assert "--synthesise" in captured.err
+
+    def test_synthesise_only_requires_text_api(self, mock_args, monkeypatch, capsys):
+        """--synthesise-only requires text API credentials."""
+        # No transcribe credentials needed, but text API is required
+        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
+        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
+        monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
+        monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
+        mock_args.synthesise_only = True
+
+        with pytest.raises(SystemExit) as exc_info:
+            validate_config(mock_args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "AZURE_TEXT_API_KEY" in captured.err
+        assert "--synthesise-only" in captured.err
+
+    def test_synthesise_only_and_synthesise_conflict(self, mock_args, monkeypatch, capsys):
+        """--synthesise and --synthesise-only cannot be used together."""
+        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
+        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        mock_args.synthesise = True
+        mock_args.synthesise_only = True
+
+        with pytest.raises(SystemExit) as exc_info:
+            validate_config(mock_args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Cannot use --synthesise and --synthesise-only together" in captured.err
+
+    def test_synthesise_only_transcript_not_found(self, mock_args, monkeypatch, capsys):
+        """--synthesise-only fails if transcript file not found."""
+        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
+        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        mock_args.synthesise_only = True
+        mock_args.audio_file = "/nonexistent/transcript.txt"
+
+        with pytest.raises(SystemExit) as exc_info:
+            validate_config(mock_args)
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "Transcript file not found" in captured.err
+
+    def test_synthesise_only_skips_audio_validation(self, mock_args, monkeypatch, tmp_path):
+        """--synthesise-only skips audio stream validation (accepts text files)."""
+        # Create a plain text file (not audio)
+        transcript = tmp_path / "transcript.txt"
+        transcript.write_text("Some transcript content")
+
+        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
+        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        mock_args.synthesise_only = True
+        mock_args.audio_file = str(transcript)
+
+        config = validate_config(mock_args)
+
+        assert config.synthesise_only is True
+        assert config.audio_file == transcript
+
+    def test_synthesise_only_no_transcribe_creds_needed(self, mock_args, monkeypatch, tmp_path):
+        """--synthesise-only does not require Azure transcription credentials."""
+        transcript = tmp_path / "transcript.txt"
+        transcript.write_text("Some transcript content")
+
+        # Only text API credentials, no transcribe credentials
+        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
+        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
+        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
+        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        mock_args.synthesise_only = True
+        mock_args.audio_file = str(transcript)
+
+        config = validate_config(mock_args)
+
+        assert config.synthesise_only is True
 
     def test_valid_config_returns_dataclass(self, mock_args, monkeypatch):
         """Valid config returns ValidatedConfig dataclass."""

@@ -11,6 +11,7 @@ A command-line tool for transcribing audio and video files to text.
 - Automatic speaker diarization and timestamps (Azure mode)
 - **Glossary-based correction** — Use a custom glossary to fix industry terms, names, and acronyms
 - **Synthesis** — Auto-generate a structured summary document from the transcript
+- **Synthesise later** — Forgot `--synthesise`? Generate a synthesis from an existing transcript file
 - **Parallel processing** — Long recordings are split into chunks and processed in parallel
 - Simple command-line interface
 - AI configured via environment variables
@@ -29,6 +30,7 @@ transcribe <audio_file> [output_file] [options]
 | `--model` | | `base` | Whisper model size (only with `--local`) |
 | `--glossary` | `-g` | None | Path to a glossary file for transcript correction |
 | `--synthesise` | `-s` | Off | Generate a synthesis/summary document (markdown) |
+| `--synthesise-only` | `-S` | Off | Generate a synthesis from an existing transcript (skips transcription) |
 | `--parallel-workers` | `-p` | 15 | Maximum parallel workers for chunk processing |
 
 ### Examples
@@ -61,6 +63,10 @@ transcribe meeting.mp3 --synthesise
 # Combine glossary correction and synthesis
 transcribe meeting.mp3 --glossary terms.txt --synthesise
 # (creates both meeting.txt and meeting_synthesis.md)
+
+# Generate synthesis from an existing transcript
+transcribe meeting.txt --synthesise-only
+# (reads meeting.txt and creates meeting_synthesis.md)
 ```
 
 ## Installation
@@ -98,7 +104,7 @@ Add the following environment variables to your `~/.zshrc` file:
 export AZURE_TRANSCRIBE_API_KEY="your-api-key-here"
 export AZURE_TRANSCRIBE_URL="https://your-endpoint.openai.azure.com/openai/deployments/<your-transcribe-deployment>/audio/transcriptions?api-version=2025-03-01-preview"
 
-# Required only when using --glossary or --synthesise
+# Required only when using --glossary, --synthesise, or --synthesise-only
 export AZURE_TEXT_API_KEY="your-text-api-key-here"
 export AZURE_TEXT_URL="https://your-endpoint.openai.azure.com/openai/deployments/<your-chat-deployment>/chat/completions?api-version=2025-03-01-preview"
 ```
@@ -200,7 +206,18 @@ transcribe meeting.mp3 --glossary terms.txt --synthesise
 
 This creates an additional markdown file alongside the transcript (e.g., `meeting_synthesis.md`) containing a structured summary of the conversation.
 
-> **Note:** Synthesis requires Azure LLM credentials (`AZURE_TEXT_API_KEY` and `AZURE_TEXT_URL`), even when using `--local` for transcription.
+### Synthesise an existing transcript
+
+If you already have a transcript and want to generate a synthesis after the fact (e.g., you forgot to pass `--synthesise` during transcription), use `--synthesise-only` (or `-S`):
+
+```bash
+transcribe meeting.txt --synthesise-only
+transcribe meeting.txt -S
+```
+
+This reads the transcript file and creates `meeting_synthesis.md` — no audio processing or transcription credentials are needed.
+
+> **Note:** Synthesis requires Azure LLM credentials (`AZURE_TEXT_API_KEY` and `AZURE_TEXT_URL`), even when using `--local` for transcription or `--synthesise-only`.
 
 ## Output Format
 
@@ -227,5 +244,5 @@ Note: Speaker diarization is only available with Azure OpenAI transcription.
 
 - Python 3.10 or higher
 - Azure OpenAI Service with:
-  - A transcription model deployment (e.g., gpt-4o-transcribe)
-  - A chat completion model deployment (for glossary and synthesis features)
+  - A transcription model deployment (e.g., gpt-4o-transcribe) — not needed for `--local` or `--synthesise-only`
+  - A chat completion model deployment (for `--glossary`, `--synthesise`, and `--synthesise-only`)
