@@ -53,6 +53,7 @@ fi
 # Check for required tools
 command -v uv >/dev/null 2>&1 || error "uv is not installed"
 command -v git >/dev/null 2>&1 || error "git is not installed"
+command -v git-cliff >/dev/null 2>&1 || error "git-cliff is not installed (see https://github.com/orhun/git-cliff)"
 
 # Check git working directory is clean
 if [ -n "$(git status --porcelain)" ]; then
@@ -200,9 +201,13 @@ if [ "$UPDATED_VERSION" != "$NEW_VERSION" ]; then
     error "Failed to update version in pyproject.toml"
 fi
 
-# Commit the version bump
-info "Committing version bump..."
-git add pyproject.toml
+# Generate changelog
+info "Generating CHANGELOG.md..."
+git-cliff --tag "v$NEW_VERSION" -o CHANGELOG.md
+
+# Commit the version bump and changelog
+info "Committing version bump and changelog..."
+git add pyproject.toml CHANGELOG.md
 git commit -m "chore: release v$NEW_VERSION"
 
 # Create git tag
