@@ -1,6 +1,12 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [2.0.0] - 2026-03-01
+
+### Features
+- Refactor monolith into modular package with protocol-based DI (**BREAKING**)
+
+
 ## [1.1.0] - 2026-02-28
 
 ### Features
