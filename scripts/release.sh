@@ -10,8 +10,9 @@
 #   feat!: / fix!:    → major (X.0.0)
 #
 # Users install via:
-#   uv pip install git+https://github.com/Deloitte-Nordics/transcriber.git
-#   uv pip install git+https://github.com/Deloitte-Nordics/transcriber.git@v0.2.0
+#   uv tool install git+https://github.com/Deloitte-Nordics/transcriber.git
+#   uv tool install "transcriber[local] @ git+https://github.com/Deloitte-Nordics/transcriber.git"
+#   uv add "transcriber @ git+https://github.com/Deloitte-Nordics/transcriber.git@v1.0.0"
 #
 
 set -euo pipefail
@@ -236,5 +237,6 @@ echo ""
 info "Successfully released v$NEW_VERSION!"
 echo ""
 echo "Install with:"
-echo "  uv pip install git+https://github.com/Deloitte-Nordics/transcriber.git            # latest (main)"
-echo "  uv pip install git+https://github.com/Deloitte-Nordics/transcriber.git@v$NEW_VERSION   # this version"
+echo "  uv tool install git+https://github.com/Deloitte-Nordics/transcriber.git                          # CLI (cloud only)"
+echo "  uv tool install \"transcriber[local] @ git+https://github.com/Deloitte-Nordics/transcriber.git\"   # CLI (with local Whisper)"
+echo "  uv add \"transcriber @ git+https://github.com/Deloitte-Nordics/transcriber.git@v$NEW_VERSION\"     # library (pinned)"

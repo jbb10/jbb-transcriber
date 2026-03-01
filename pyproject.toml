@@ -5,24 +5,27 @@ build-backend = "hatchling.build"
 [project]
 name = "transcriber"
 version = "1.1.0"
-description = "Audio transcription CLI tool using Azure OpenAI with speaker diarization"
+description = "Audio transcription library and CLI tool using Azure OpenAI with speaker diarization"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 dependencies = [
     "requests>=2.31.0",
     "av>=12.0.0",
-    "openai-whisper>=20231117",
 ]
 
 [project.urls]
 Repository = "https://github.com/Deloitte-Nordics/transcriber"
 
 [project.optional-dependencies]
+local = [
+    "openai-whisper>=20231117",
+]
 test = [
     "pytest>=8.0.0",
     "python-dotenv>=1.0.0",
 ]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
@@ -32,17 +35,14 @@ dev = [
 ]
 
 [project.scripts]
-transcribe = "transcriber:main"
+transcribe = "transcriber.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
-include = ["transcriber.py", "correction_prompt.md", "synthesis_prompt.md"]
+packages = ["transcriber"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "transcriber.py",
-    "correction_prompt.md",
-    "synthesis_prompt.md",
+    "transcriber/",
     "README.md",
     "pyproject.toml",
 ]
@@ -51,7 +51,7 @@ include = [
 pythonVersion = "3.10"
 pythonPlatform = "All"
 typeCheckingMode = "strict"
-include = ["transcriber.py"]
+include = ["transcriber"]
 exclude = ["tests", "**/__pycache__"]
 
 [tool.ruff]

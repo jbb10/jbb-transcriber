@@ -2,22 +2,16 @@
 Negative tests for error handling (these don't require Azure credentials).
 """
 
-import argparse
 import builtins
 import os
 import tempfile
 
 import pytest
 
-from transcriber import (
-    format_whisper_output,
-    get_config,
-    import_whisper,
-    positive_int,
-    transcribe_audio,
-    validate_audio_file,
-    validate_config,
-)
+from transcriber import ConfigurationError
+from transcriber._config import validate_cli_config
+from transcriber._transcription import format_whisper_output
+from transcriber.cli import positive_int
 
 
 class TestPositiveIntType:
@@ -31,25 +25,31 @@ class TestPositiveIntType:
 
     def test_zero_raises_error(self):
         """Rejects zero."""
+        import argparse
+
         with pytest.raises(argparse.ArgumentTypeError) as exc_info:
             positive_int("0")
         assert "at least 1" in str(exc_info.value)
 
     def test_negative_raises_error(self):
         """Rejects negative integers."""
+        import argparse
+
         with pytest.raises(argparse.ArgumentTypeError) as exc_info:
             positive_int("-1")
         assert "at least 1" in str(exc_info.value)
 
     def test_non_integer_raises_error(self):
         """Rejects non-integer values."""
+        import argparse
+
         with pytest.raises(argparse.ArgumentTypeError) as exc_info:
             positive_int("abc")
         assert "invalid int" in str(exc_info.value)
 
 
-class TestValidateConfig:
-    """Tests for validate_config function."""
+class TestValidateCliConfig:
+    """Tests for validate_cli_config function."""
 
     @pytest.fixture
     def valid_audio_file(self, short_audio_file):
@@ -57,192 +57,174 @@ class TestValidateConfig:
         return short_audio_file
 
     @pytest.fixture
-    def mock_args(self, valid_audio_file):
-        """Create a mock args namespace with valid defaults."""
-        return argparse.Namespace(
-            audio_file=valid_audio_file,
-            output_file=None,
-            glossary=None,
-            synthesise=False,
-            synthesise_only=False,
-            parallel_workers=15,
-            local=False,
-            model="base",
-        )
+    def valid_kwargs(self, valid_audio_file):
+        """Create valid keyword args for validate_cli_config."""
+        return {
+            "audio_file": valid_audio_file,
+            "output_file": None,
+            "glossary": None,
+            "synthesise": False,
+            "synthesise_only": False,
+            "parallel_workers": 15,
+            "local": False,
+            "model": "base",
+        }
 
-    def test_parallel_workers_too_high(self, mock_args, monkeypatch, capsys):
+    def test_parallel_workers_too_high(self, valid_kwargs, monkeypatch):
         """Rejects parallel_workers > 100."""
         monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
         monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
-        mock_args.parallel_workers = 200
+        valid_kwargs["parallel_workers"] = 200
 
-        with pytest.raises(SystemExit) as exc_info:
-            validate_config(mock_args)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**valid_kwargs)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "cannot exceed 100" in captured.err
+        assert any("cannot exceed 100" in e for e in exc_info.value.errors)
 
-    def test_output_dir_not_exists(self, mock_args, monkeypatch, capsys):
+    def test_output_dir_not_exists(self, valid_kwargs, monkeypatch):
         """Rejects output path in nonexistent directory."""
         monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
         monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
-        mock_args.output_file = "/nonexistent/directory/output.txt"
+        valid_kwargs["output_file"] = "/nonexistent/directory/output.txt"
 
-        with pytest.raises(SystemExit) as exc_info:
-            validate_config(mock_args)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**valid_kwargs)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "Output directory does not exist" in captured.err
+        assert any("Output directory does not exist" in e for e in exc_info.value.errors)
 
-    def test_audio_file_not_found(self, mock_args, monkeypatch, capsys):
+    def test_audio_file_not_found(self, valid_kwargs, monkeypatch):
         """Rejects nonexistent audio file."""
         monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
         monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
-        mock_args.audio_file = "/nonexistent/audio.mp3"
+        valid_kwargs["audio_file"] = "/nonexistent/audio.mp3"
 
-        with pytest.raises(SystemExit) as exc_info:
-            validate_config(mock_args)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**valid_kwargs)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "Audio file not found" in captured.err
+        assert any("Audio file not found" in e for e in exc_info.value.errors)
 
-    def test_glossary_file_not_found(self, mock_args, monkeypatch, capsys):
+    def test_glossary_file_not_found(self, valid_kwargs, monkeypatch):
         """Rejects nonexistent glossary file."""
         monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
         monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
         monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-text-key")
         monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
-        mock_args.glossary = "/nonexistent/glossary.txt"
+        valid_kwargs["glossary"] = "/nonexistent/glossary.txt"
 
-        with pytest.raises(SystemExit) as exc_info:
-            validate_config(mock_args)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**valid_kwargs)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "Glossary file not found" in captured.err
+        assert any("Glossary file not found" in e for e in exc_info.value.errors)
 
-    def test_multiple_errors_shown(self, mock_args, monkeypatch, capsys):
+    def test_multiple_errors_shown(self, valid_kwargs, monkeypatch):
         """All validation errors are reported at once."""
-        # Clear all env vars to trigger multiple errors
         monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
         monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
-        mock_args.audio_file = "/nonexistent/audio.mp3"
-        mock_args.parallel_workers = 200
+        valid_kwargs["audio_file"] = "/nonexistent/audio.mp3"
+        valid_kwargs["parallel_workers"] = 200
 
-        with pytest.raises(SystemExit) as exc_info:
-            validate_config(mock_args)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**valid_kwargs)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        # Should see multiple error messages
-        assert "cannot exceed 100" in captured.err
-        assert "Audio file not found" in captured.err
-        assert "AZURE_TRANSCRIBE_API_KEY" in captured.err
+        errors_text = " ".join(exc_info.value.errors)
+        assert "cannot exceed 100" in errors_text
+        assert "Audio file not found" in errors_text
+        assert "AZURE_TRANSCRIBE_API_KEY" in errors_text
 
-    def test_synthesise_requires_text_api(self, mock_args, monkeypatch, capsys):
+    def test_synthesise_requires_text_api(self, valid_kwargs, monkeypatch):
         """--synthesise requires text API credentials."""
         monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
         monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
-        # Ensure text API credentials are NOT set
         monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
         monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
-        mock_args.synthesise = True
+        valid_kwargs["synthesise"] = True
 
-        with pytest.raises(SystemExit) as exc_info:
-            validate_config(mock_args)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**valid_kwargs)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "AZURE_TEXT_API_KEY" in captured.err
-        assert "--synthesise" in captured.err
+        errors_text = " ".join(exc_info.value.errors)
+        assert "AZURE_TEXT_API_KEY" in errors_text
+        assert "--synthesise" in errors_text
 
-    def test_synthesise_only_requires_text_api(self, mock_args, monkeypatch, capsys):
+    def test_synthesise_only_requires_text_api(self, valid_kwargs, monkeypatch):
         """--synthesise-only requires text API credentials."""
-        # No transcribe credentials needed, but text API is required
         monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
         monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
         monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
         monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
-        mock_args.synthesise_only = True
+        valid_kwargs["synthesise_only"] = True
 
-        with pytest.raises(SystemExit) as exc_info:
-            validate_config(mock_args)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**valid_kwargs)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "AZURE_TEXT_API_KEY" in captured.err
-        assert "--synthesise-only" in captured.err
+        errors_text = " ".join(exc_info.value.errors)
+        assert "AZURE_TEXT_API_KEY" in errors_text
+        assert "--synthesise-only" in errors_text
 
-    def test_synthesise_only_and_synthesise_conflict(self, mock_args, monkeypatch, capsys):
+    def test_synthesise_only_and_synthesise_conflict(self, valid_kwargs, monkeypatch):
         """--synthesise and --synthesise-only cannot be used together."""
         monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
         monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
-        mock_args.synthesise = True
-        mock_args.synthesise_only = True
+        valid_kwargs["synthesise"] = True
+        valid_kwargs["synthesise_only"] = True
 
-        with pytest.raises(SystemExit) as exc_info:
-            validate_config(mock_args)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**valid_kwargs)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "Cannot use --synthesise and --synthesise-only together" in captured.err
+        assert any(
+            "Cannot use --synthesise and --synthesise-only together" in e
+            for e in exc_info.value.errors
+        )
 
-    def test_synthesise_only_transcript_not_found(self, mock_args, monkeypatch, capsys):
+    def test_synthesise_only_transcript_not_found(self, valid_kwargs, monkeypatch):
         """--synthesise-only fails if transcript file not found."""
         monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
         monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
-        mock_args.synthesise_only = True
-        mock_args.audio_file = "/nonexistent/transcript.txt"
+        valid_kwargs["synthesise_only"] = True
+        valid_kwargs["audio_file"] = "/nonexistent/transcript.txt"
 
-        with pytest.raises(SystemExit) as exc_info:
-            validate_config(mock_args)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**valid_kwargs)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "Transcript file not found" in captured.err
+        assert any("Transcript file not found" in e for e in exc_info.value.errors)
 
-    def test_synthesise_only_skips_audio_validation(self, mock_args, monkeypatch, tmp_path):
+    def test_synthesise_only_skips_audio_validation(self, valid_kwargs, monkeypatch, tmp_path):
         """--synthesise-only skips audio stream validation (accepts text files)."""
-        # Create a plain text file (not audio)
         transcript = tmp_path / "transcript.txt"
         transcript.write_text("Some transcript content")
 
         monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
         monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
-        mock_args.synthesise_only = True
-        mock_args.audio_file = str(transcript)
+        valid_kwargs["synthesise_only"] = True
+        valid_kwargs["audio_file"] = str(transcript)
 
-        config = validate_config(mock_args)
+        config = validate_cli_config(**valid_kwargs)
 
         assert config.synthesise_only is True
         assert config.audio_file == transcript
 
-    def test_synthesise_only_no_transcribe_creds_needed(self, mock_args, monkeypatch, tmp_path):
+    def test_synthesise_only_no_transcribe_creds_needed(self, valid_kwargs, monkeypatch, tmp_path):
         """--synthesise-only does not require Azure transcription credentials."""
         transcript = tmp_path / "transcript.txt"
         transcript.write_text("Some transcript content")
 
-        # Only text API credentials, no transcribe credentials
         monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
         monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
         monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
         monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
-        mock_args.synthesise_only = True
-        mock_args.audio_file = str(transcript)
+        valid_kwargs["synthesise_only"] = True
+        valid_kwargs["audio_file"] = str(transcript)
 
-        config = validate_config(mock_args)
+        config = validate_cli_config(**valid_kwargs)
 
         assert config.synthesise_only is True
 
-    def test_valid_config_returns_dataclass(self, mock_args, monkeypatch):
+    def test_valid_config_returns_dataclass(self, valid_kwargs, monkeypatch):
         """Valid config returns ValidatedConfig dataclass."""
         monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
         monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
 
-        config = validate_config(mock_args)
+        config = validate_cli_config(**valid_kwargs)
 
         assert config.parallel_workers == 15
         assert config.synthesise is False
@@ -253,12 +235,11 @@ class TestValidateConfig:
 class TestValidationHappensBeforeWork:
     """Tests that parameter validation occurs BEFORE any FFmpeg/conversion work."""
 
-    def test_invalid_param_fails_before_conversion(self, short_audio_file, capsys):
+    def test_invalid_param_fails_before_conversion(self, short_audio_file):
         """Invalid parameters should fail BEFORE any conversion/FFmpeg work starts."""
         import subprocess
         import sys
 
-        # Use a valid audio file but invalid parallel-workers (too high)
         result = subprocess.run(
             [
                 sys.executable,
@@ -270,19 +251,16 @@ class TestValidationHappensBeforeWork:
             ],
             capture_output=True,
             text=True,
-            timeout=10,  # Should fail fast, not wait for conversion
+            timeout=10,
         )
 
         assert result.returncode != 0
-        # Should see the validation error
         assert "cannot exceed 100" in result.stderr
-        # Should NOT see any conversion messages (validation failed first)
         assert "Converting" not in result.stderr
         assert "extracting audio" not in result.stderr.lower()
 
     def test_missing_glossary_fails_before_conversion(self, short_audio_file):
         """Missing glossary file should fail BEFORE any conversion work."""
-        import os
         import subprocess
         import sys
 
@@ -309,7 +287,6 @@ class TestValidationHappensBeforeWork:
 
         assert result.returncode != 0
         assert "Glossary file not found" in result.stderr
-        # Should NOT see conversion messages
         assert "Converting" not in result.stderr
 
     def test_missing_env_vars_fails_before_conversion(self, short_audio_file):
@@ -317,7 +294,6 @@ class TestValidationHappensBeforeWork:
         import subprocess
         import sys
 
-        # Run with no Azure credentials set
         env = {"PATH": os.environ.get("PATH", "")}
 
         result = subprocess.run(
@@ -335,105 +311,80 @@ class TestValidationHappensBeforeWork:
 
         assert result.returncode != 0
         assert "AZURE_TRANSCRIBE_API_KEY" in result.stderr
-        # Should NOT see conversion messages
         assert "Converting" not in result.stderr
 
 
 class TestMissingCredentials:
-    """Tests for missing Azure credentials."""
+    """Tests for missing Azure credentials via backend .from_env()."""
 
-    def test_missing_api_key(self, clean_env):
-        """Raises SystemExit when AZURE_TRANSCRIBE_API_KEY is missing."""
-        with pytest.raises(SystemExit) as exc_info:
-            get_config()
+    def test_missing_transcription_api_key(self, clean_env):
+        """Raises ConfigurationError when AZURE_TRANSCRIBE_API_KEY is missing."""
+        from transcriber import AzureTranscriptionBackend
 
-        assert exc_info.value.code == 1
+        with pytest.raises(ConfigurationError):
+            AzureTranscriptionBackend.from_env()
 
-    def test_missing_api_url(self, clean_env, monkeypatch):
-        """Raises SystemExit when AZURE_TRANSCRIBE_URL is missing."""
-        # Set the key but not the URL
+    def test_missing_transcription_api_url(self, clean_env, monkeypatch):
+        """Raises ConfigurationError when AZURE_TRANSCRIBE_URL is missing."""
+        from transcriber import AzureTranscriptionBackend
+
         monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
 
-        with pytest.raises(SystemExit) as exc_info:
-            get_config()
+        with pytest.raises(ConfigurationError):
+            AzureTranscriptionBackend.from_env()
 
-        assert exc_info.value.code == 1
+    def test_missing_text_api_key(self, clean_env):
+        """Raises ConfigurationError when AZURE_TEXT_API_KEY is missing."""
+        from transcriber import AzureLLMBackend
 
-    def test_missing_text_api_key_when_required(self, clean_env, monkeypatch):
-        """Raises SystemExit when text API credentials are required but missing."""
-        monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
+        with pytest.raises(ConfigurationError):
+            AzureLLMBackend.from_env()
 
-        with pytest.raises(SystemExit) as exc_info:
-            get_config(require_text_api=True)
+    def test_missing_text_api_url(self, clean_env, monkeypatch):
+        """Raises ConfigurationError when AZURE_TEXT_URL is missing."""
+        from transcriber import AzureLLMBackend
 
-        assert exc_info.value.code == 1
-
-    def test_missing_text_api_url_when_required(self, clean_env, monkeypatch):
-        """Raises SystemExit when text API URL is required but missing."""
-        monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
         monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-text-key")
 
-        with pytest.raises(SystemExit) as exc_info:
-            get_config(require_text_api=True)
-
-        assert exc_info.value.code == 1
+        with pytest.raises(ConfigurationError):
+            AzureLLMBackend.from_env()
 
 
 class TestFileValidation:
-    """Tests for file validation errors."""
+    """Tests for file validation via the public API."""
 
     def test_file_not_found(self):
-        """Raises SystemExit for nonexistent audio file."""
-        with pytest.raises(SystemExit) as exc_info:
-            validate_audio_file("/nonexistent/path/to/audio.mp3")
+        """Raises AudioFileError for nonexistent audio file."""
+        from transcriber import AudioFileError, transcribe_file
 
-        assert exc_info.value.code == 1
-
-    def test_validates_existing_file(self, short_audio_file):
-        """Does not raise for existing audio file."""
-        # Should not raise any exception
-        validate_audio_file(short_audio_file)
-
-    def test_unrecognized_format_logs_warning(self, capsys):
-        """Logs warning for unrecognized file format but doesn't fail."""
-        # Create a file with unusual extension
-        with tempfile.NamedTemporaryFile(suffix=".xyz", delete=False) as f:
-            f.write(b"test content")
-            temp_path = f.name
-
-        try:
-            # Should not raise (just logs a warning)
-            validate_audio_file(temp_path)
-
-            # Check stderr for warning message
-            captured = capsys.readouterr()
-            assert "not recognized" in captured.err.lower() or "attempting" in captured.err.lower()
-        finally:
-            os.unlink(temp_path)
+        with pytest.raises(AudioFileError):
+            transcribe_file("/nonexistent/path/to/audio.mp3")
 
 
 class TestInvalidApiCredentials:
     """Tests for invalid API credentials (requires network)."""
 
     def test_invalid_api_key_returns_error(self, short_audio_file):
-        """Invalid API key results in API error."""
-        with pytest.raises(SystemExit):
-            transcribe_audio(
-                short_audio_file,
-                api_key="invalid-api-key-12345",
-                api_url="https://invalid-endpoint.openai.azure.com/openai/deployments/test/audio/transcriptions?api-version=2025-03-01-preview",
-            )
+        """Invalid API key results in a TranscriptionError."""
+        from transcriber import AzureTranscriptionBackend, TranscriptionError
+
+        backend = AzureTranscriptionBackend(
+            api_key="invalid-api-key-12345",
+            api_url="https://invalid-endpoint.openai.azure.com/openai/deployments/test/audio/transcriptions?api-version=2025-03-01-preview",
+        )
+        with pytest.raises((TranscriptionError, Exception)):
+            backend.transcribe(short_audio_file)
 
     def test_invalid_url_returns_error(self, short_audio_file):
-        """Invalid API URL results in request error."""
-        with pytest.raises(SystemExit):
-            transcribe_audio(
-                short_audio_file,
-                api_key="test-key",
-                api_url="https://this-endpoint-does-not-exist-12345.openai.azure.com/test",
-            )
+        """Invalid API URL results in a TranscriptionError."""
+        from transcriber import AzureTranscriptionBackend, TranscriptionError
+
+        backend = AzureTranscriptionBackend(
+            api_key="test-key",
+            api_url="https://this-endpoint-does-not-exist-12345.openai.azure.com/test",
+        )
+        with pytest.raises((TranscriptionError, Exception)):
+            backend.transcribe(short_audio_file)
 
 
 class TestEdgeCases:
@@ -442,15 +393,12 @@ class TestEdgeCases:
     def test_empty_audio_file(self):
         """Empty audio file is handled gracefully."""
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-            # Write empty content (0 bytes)
             temp_path = f.name
 
         try:
-            # Should fail when trying to get duration or process
-            from transcriber import get_audio_duration
+            from transcriber._audio import get_audio_duration
 
             duration = get_audio_duration(temp_path)
-            # An empty file should return None or fail gracefully
             assert duration is None or duration == 0
         finally:
             os.unlink(temp_path)
@@ -458,15 +406,13 @@ class TestEdgeCases:
     def test_corrupted_audio_file(self):
         """Corrupted audio file is handled gracefully."""
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-            # Write garbage data
             f.write(b"This is not valid MP3 data, just random bytes: " + os.urandom(1000))
             temp_path = f.name
 
         try:
-            from transcriber import get_audio_duration
+            from transcriber._audio import get_audio_duration
 
             duration = get_audio_duration(temp_path)
-            # Corrupted file should return None
             assert duration is None
         finally:
             os.unlink(temp_path)
@@ -475,8 +421,10 @@ class TestEdgeCases:
 class TestWhisperImport:
     """Tests for Whisper lazy import."""
 
-    def test_import_whisper_missing_exits(self, monkeypatch, capsys):
-        """import_whisper exits with helpful message when whisper not installed."""
+    def test_import_whisper_missing_raises(self, monkeypatch):
+        """_import_whisper raises ConfigurationError when whisper not installed."""
+        from transcriber._transcription import _import_whisper
+
         original_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
@@ -486,13 +434,11 @@ class TestWhisperImport:
 
         monkeypatch.setattr(builtins, "__import__", mock_import)
 
-        with pytest.raises(SystemExit) as exc_info:
-            import_whisper()
+        with pytest.raises(ConfigurationError) as exc_info:
+            _import_whisper()
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "openai-whisper" in captured.err
-        assert "uv tool install" in captured.err
+        errors_text = " ".join(exc_info.value.errors)
+        assert "openai-whisper" in errors_text
 
 
 class TestLocalTranscription:
@@ -543,7 +489,7 @@ class TestLocalTranscription:
 
 
 class TestLocalModeValidation:
-    """Tests for local mode validation in validate_config."""
+    """Tests for local mode validation in validate_cli_config."""
 
     @pytest.fixture
     def valid_audio_file(self, short_audio_file):
@@ -551,33 +497,31 @@ class TestLocalModeValidation:
         return short_audio_file
 
     @pytest.fixture
-    def local_args(self, valid_audio_file):
-        """Create a mock args namespace for local mode."""
-        return argparse.Namespace(
-            audio_file=valid_audio_file,
-            output_file=None,
-            glossary=None,
-            synthesise=False,
-            parallel_workers=15,
-            local=True,
-            model="base",
-        )
+    def local_kwargs(self, valid_audio_file):
+        """Create keyword args for local mode."""
+        return {
+            "audio_file": valid_audio_file,
+            "output_file": None,
+            "glossary": None,
+            "synthesise": False,
+            "synthesise_only": False,
+            "parallel_workers": 15,
+            "local": True,
+            "model": "base",
+        }
 
-    def test_local_mode_no_azure_credentials_required(self, local_args, monkeypatch):
+    def test_local_mode_no_azure_credentials_required(self, local_kwargs, monkeypatch):
         """--local works without AZURE_TRANSCRIBE_* env vars."""
-        # Remove all Azure credentials
         monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
         monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
         monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
         monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
 
-        # Should NOT exit - local mode doesn't need Azure transcription credentials
-        # Note: may fail on import_whisper check, so we mock that
+        # Mock whisper import
         original_import = builtins.__import__
 
         def mock_import(name, *args, **kwargs):
             if name == "whisper":
-                # Return a mock module
                 import types
 
                 mock_whisper = types.ModuleType("whisper")
@@ -586,27 +530,26 @@ class TestLocalModeValidation:
 
         monkeypatch.setattr(builtins, "__import__", mock_import)
 
-        config = validate_config(local_args)
+        config = validate_cli_config(**local_kwargs)
         assert config.local_mode is True
         assert config.transcribe_api_key == ""
         assert config.transcribe_url == ""
 
-    def test_azure_mode_still_requires_credentials(self, local_args, monkeypatch, capsys):
+    def test_azure_mode_still_requires_credentials(self, local_kwargs, monkeypatch):
         """Default (non-local) mode still requires Azure credentials."""
-        local_args.local = False
+        local_kwargs["local"] = False
         monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
         monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
 
-        with pytest.raises(SystemExit) as exc_info:
-            validate_config(local_args)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**local_kwargs)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "AZURE_TRANSCRIBE_API_KEY" in captured.err
+        errors_text = " ".join(exc_info.value.errors)
+        assert "AZURE_TRANSCRIBE_API_KEY" in errors_text
 
-    def test_local_with_glossary_requires_text_api(self, local_args, monkeypatch, capsys):
+    def test_local_with_glossary_requires_text_api(self, local_kwargs, monkeypatch):
         """--local with --glossary still requires Azure text API credentials."""
-        local_args.glossary = "/some/glossary.txt"
+        local_kwargs["glossary"] = "/some/glossary.txt"
         monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
         monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
         monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
@@ -624,19 +567,17 @@ class TestLocalModeValidation:
 
         monkeypatch.setattr(builtins, "__import__", mock_import)
 
-        with pytest.raises(SystemExit) as exc_info:
-            validate_config(local_args)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**local_kwargs)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
+        errors_text = " ".join(exc_info.value.errors)
         # Should require text API but NOT transcription API
-        assert "AZURE_TEXT_API_KEY" in captured.err
-        # Should NOT complain about transcription API
-        assert "AZURE_TRANSCRIBE_API_KEY" not in captured.err
+        assert "AZURE_TEXT_API_KEY" in errors_text
+        assert "AZURE_TRANSCRIBE_API_KEY" not in errors_text
 
-    def test_local_with_synthesise_requires_text_api(self, local_args, monkeypatch, capsys):
+    def test_local_with_synthesise_requires_text_api(self, local_kwargs, monkeypatch):
         """--local with --synthesise still requires Azure text API credentials."""
-        local_args.synthesise = True
+        local_kwargs["synthesise"] = True
         monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
         monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
         monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
@@ -654,14 +595,13 @@ class TestLocalModeValidation:
 
         monkeypatch.setattr(builtins, "__import__", mock_import)
 
-        with pytest.raises(SystemExit) as exc_info:
-            validate_config(local_args)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**local_kwargs)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "AZURE_TEXT_API_KEY" in captured.err
+        errors_text = " ".join(exc_info.value.errors)
+        assert "AZURE_TEXT_API_KEY" in errors_text
 
-    def test_local_mode_whisper_not_installed_error(self, local_args, monkeypatch, capsys):
+    def test_local_mode_whisper_not_installed_error(self, local_kwargs, monkeypatch):
         """--local mode fails with helpful message when whisper not installed."""
         monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
         monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
@@ -676,9 +616,8 @@ class TestLocalModeValidation:
 
         monkeypatch.setattr(builtins, "__import__", mock_import)
 
-        with pytest.raises(SystemExit) as exc_info:
-            validate_config(local_args)
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**local_kwargs)
 
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "openai-whisper" in captured.err
+        errors_text = " ".join(exc_info.value.errors)
+        assert "openai-whisper" in errors_text

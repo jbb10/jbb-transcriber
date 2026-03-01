@@ -41,6 +41,17 @@ def azure_transcribe_config():
 
 
 @pytest.fixture(scope="session")
+def azure_transcription_backend(azure_transcribe_config):
+    """An AzureTranscriptionBackend built from test credentials."""
+    from transcriber import AzureTranscriptionBackend
+
+    return AzureTranscriptionBackend(
+        api_key=azure_transcribe_config["transcribe_key"],
+        api_url=azure_transcribe_config["transcribe_url"],
+    )
+
+
+@pytest.fixture(scope="session")
 def azure_text_config(azure_transcribe_config):
     """Azure text/chat API configuration for glossary correction.
 
@@ -58,6 +69,17 @@ def azure_text_config(azure_transcribe_config):
         "text_key": text_key,
         "text_url": text_url,
     }
+
+
+@pytest.fixture(scope="session")
+def azure_llm_backend(azure_text_config):
+    """An AzureLLMBackend built from test credentials."""
+    from transcriber import AzureLLMBackend
+
+    return AzureLLMBackend(
+        api_key=azure_text_config["text_key"],
+        api_url=azure_text_config["text_url"],
+    )
 
 
 @pytest.fixture(scope="session")

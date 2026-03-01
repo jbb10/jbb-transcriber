@@ -1,11 +1,12 @@
-# Audio Transcription CLI Tool
+# Audio Transcription Tool
 
-A command-line tool for transcribing audio and video files to text.
+A Python library and command-line tool for transcribing audio and video files to text.
 
 > **Note:** Supports both **Azure OpenAI** (cloud) and **local Whisper** (offline) transcription.
 
 ## Features
 
+- **Library + CLI** — Use as a Python package in your own code, or as a standalone CLI tool
 - Supports almost any audio and video format you can think of (powered by ffmpeg)
 - **Local transcription** — Use OpenAI Whisper for offline, private transcription (no API needed)
 - Automatic speaker diarization and timestamps (Azure mode)
@@ -13,6 +14,7 @@ A command-line tool for transcribing audio and video files to text.
 - **Synthesis** — Auto-generate a structured summary document from the transcript
 - **Synthesise later** — Forgot `--synthesise`? Generate a synthesis from an existing transcript file
 - **Parallel processing** — Long recordings are split into chunks and processed in parallel
+- **Dependency injection** — Plug in custom transcription or LLM backends via Protocol types
 - Simple command-line interface
 - AI configured via environment variables
 
@@ -71,18 +73,126 @@ transcribe meeting.txt --synthesise-only
 
 ## Installation
 
-### Install via uv tool (recommended)
+### Install via uv tool (recommended for CLI use)
 
 ```bash
+# Cloud transcription only
 uv tool install git+https://github.com/Deloitte-Nordics/transcriber.git
+
+# With local Whisper support (~1.5 GB for models + PyTorch)
+uv tool install "transcriber[local] @ git+https://github.com/Deloitte-Nordics/transcriber.git"
 ```
 
-This installs `transcribe` as a global command available from anywhere, including local Whisper transcription support.
+This installs `transcribe` as a global command available from anywhere.
+
+### Install as a Python library
+
+```bash
+# Add to your project (cloud transcription only)
+uv add "transcriber @ git+https://github.com/Deloitte-Nordics/transcriber.git"
+
+# With local Whisper support
+uv add "transcriber[local] @ git+https://github.com/Deloitte-Nordics/transcriber.git"
+```
+
+Or with pip:
+
+```bash
+pip install "transcriber @ git+https://github.com/Deloitte-Nordics/transcriber.git"
+```
 
 ### Run without installing (uvx)
 
 ```bash
 uvx --from git+https://github.com/Deloitte-Nordics/transcriber.git transcribe audio.mp3
+```
+
+## Library Usage
+
+Use transcriber as a dependency in your own Python programs:
+
+```python
+import transcriber
+
+# Simple cloud transcription (reads API credentials from env vars)
+result = transcriber.transcribe_file("meeting.mp4")
+print(result.transcript)
+
+# With glossary correction and synthesis
+result = transcriber.transcribe_file(
+    "meeting.mp4",
+    glossary="terms.txt",
+    synthesise=True,
+)
+print(result.transcript)
+print(result.synthesis)
+
+# Write output to files automatically
+result = transcriber.transcribe_file(
+    "meeting.mp4",
+    output="meeting.txt",
+    synthesise=True,
+)
+
+# Local Whisper transcription (requires transcriber[local])
+result = transcriber.transcribe_file("meeting.mp4", local=True, model="medium")
+
+# Synthesise an existing transcript
+synthesis = transcriber.synthesise_text("transcript text here...")
+```
+
+### Custom Backends (Dependency Injection)
+
+Plug in your own transcription or LLM backends:
+
+```python
+import transcriber
+
+# Use explicit Azure credentials (no env vars needed)
+backend = transcriber.AzureTranscriptionBackend(
+    api_key="your-key",
+    api_url="https://your-endpoint.openai.azure.com/...",
+)
+result = transcriber.transcribe_file("meeting.mp4", transcription_backend=backend)
+
+# Or implement the Protocol for a custom provider
+class MyTranscriptionBackend:
+    def transcribe(self, audio_path: str, *, time_offset: int = 0) -> str:
+        # Your custom transcription logic
+        ...
+
+result = transcriber.transcribe_file("meeting.mp4", transcription_backend=MyTranscriptionBackend())
+```
+
+### Return Types
+
+`transcribe_file()` returns a `TranscriptionResult`:
+
+```python
+@dataclass(frozen=True)
+class TranscriptionResult:
+    transcript: str              # The transcription text
+    synthesis: str | None        # Synthesis markdown, or None
+    duration_seconds: float | None  # Audio duration in seconds, or None
+```
+
+### Exception Handling
+
+All errors are typed exceptions:
+
+```python
+import transcriber
+
+try:
+    result = transcriber.transcribe_file("meeting.mp4")
+except transcriber.ConfigurationError as e:
+    print(f"Config issue: {e.errors}")
+except transcriber.AudioFileError as e:
+    print(f"File issue: {e} (path: {e.path})")
+except transcriber.TranscriptionError as e:
+    print(f"API issue: {e}")
+except transcriber.TranscriberError as e:
+    print(f"General error: {e}")
 ```
 
 ## Configuration
@@ -121,6 +231,8 @@ source ~/.zshrc
 ```
 
 ## Local Transcription Mode
+
+> **Requires the `[local]` extra:** Install with `uv tool install "transcriber[local] @ ..."` or `uv add "transcriber[local] @ ..."`.
 
 Use the `--local` flag to transcribe audio offline using OpenAI's Whisper model. No API credentials are needed for transcription (though glossary correction and synthesis still require Azure LLM credentials).
 
@@ -246,3 +358,4 @@ Note: Speaker diarization is only available with Azure OpenAI transcription.
 - Azure OpenAI Service with:
   - A transcription model deployment (e.g., gpt-4o-transcribe) — not needed for `--local` or `--synthesise-only`
   - A chat completion model deployment (for `--glossary`, `--synthesise`, and `--synthesise-only`)
+- **Optional:** `openai-whisper` for local transcription — install with the `[local]` extra
