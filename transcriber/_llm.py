@@ -79,15 +79,20 @@ class AzureLLMBackend:
     Args:
         api_key: Azure API key for the text/chat model.
         api_url: Azure API endpoint URL for the text/chat model.
+        request_timeout: HTTP request timeout in seconds.
     """
 
-    def __init__(self, api_key: str, api_url: str) -> None:
+    def __init__(self, api_key: str, api_url: str, *, request_timeout: int = 300) -> None:
         self.api_key = api_key
         self.api_url = api_url
+        self.request_timeout = request_timeout
 
     @classmethod
-    def from_env(cls) -> AzureLLMBackend:
+    def from_env(cls, *, request_timeout: int = 300) -> AzureLLMBackend:
         """Create an instance from environment variables.
+
+        Args:
+            request_timeout: HTTP request timeout in seconds.
 
         Raises:
             ConfigurationError: If required environment variables are missing.
@@ -108,7 +113,7 @@ class AzureLLMBackend:
             )
         if errors:
             raise ConfigurationError(errors)
-        return cls(api_key, api_url)  # type: ignore[arg-type]
+        return cls(api_key, api_url, request_timeout=request_timeout)  # type: ignore[arg-type]
 
     def complete(self, prompt: str, *, temperature: float = 0.1, max_retries: int = 3) -> str:
         """Send a prompt and return the LLM completion text.
@@ -136,7 +141,7 @@ class AzureLLMBackend:
                 self.api_url,
                 headers=headers,
                 json=data,
-                timeout=300,
+                timeout=self.request_timeout,
             )
             response.raise_for_status()
             result = response.json()

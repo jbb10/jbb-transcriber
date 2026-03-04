@@ -27,6 +27,9 @@ Use as a CLI::
 from __future__ import annotations
 
 import logging
+import os
+import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
@@ -74,8 +77,25 @@ logging.getLogger(__name__).addHandler(logging.NullHandler())
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Public result type
+# Public result types
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ChunkResult:
+    """Metadata for a single processed audio chunk.
+
+    Attributes:
+        index: Zero-based chunk index.
+        transcript: The transcription text for this chunk.
+        start_offset_seconds: Start time of this chunk in the original audio.
+        processing_time_seconds: Wall-clock time spent processing this chunk.
+    """
+
+    index: int
+    transcript: str
+    start_offset_seconds: float
+    processing_time_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -86,11 +106,13 @@ class TranscriptionResult:
         transcript: The transcription text.
         synthesis: The synthesis markdown, or ``None`` if not requested.
         duration_seconds: Audio duration in seconds, or ``None`` if unknown.
+        chunks: Per-chunk metadata when the file was split, or ``None``.
     """
 
     transcript: str
     synthesis: str | None = None
     duration_seconds: float | None = None
+    chunks: tuple[ChunkResult, ...] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -99,16 +121,18 @@ class TranscriptionResult:
 
 
 def transcribe_file(  # noqa: C901
-    path: str,
+    path: str | os.PathLike[str],
     *,
-    output: str | None = None,
-    glossary: str | None = None,
+    output: str | os.PathLike[str] | None = None,
+    glossary: str | os.PathLike[str] | None = None,
     synthesise: bool = False,
     local: bool = False,
     model: str = "base",
+    chunk_duration: int = 900,
     parallel_workers: int = 15,
     transcription_backend: TranscriptionBackend | None = None,
     llm_backend: LLMBackend | None = None,
+    on_chunk_complete: Callable[[int, int], None] | None = None,
 ) -> TranscriptionResult:
     """Transcribe an audio or video file.
 
@@ -122,6 +146,8 @@ def transcribe_file(  # noqa: C901
         synthesise: Generate a synthesis document alongside the transcript.
         local: Use local Whisper model instead of Azure API.
         model: Whisper model name (only used when ``local=True``).
+        chunk_duration: Duration in seconds for each audio chunk when
+            splitting long files (default 900 = 15 min).
         parallel_workers: Max parallel workers for long-file chunking.
         transcription_backend: Custom transcription backend.  If ``None``,
             an ``AzureTranscriptionBackend`` (or ``WhisperTranscriptionBackend``
@@ -129,6 +155,9 @@ def transcribe_file(  # noqa: C901
         llm_backend: Custom LLM backend.  If ``None`` and an LLM is needed
             (glossary or synthesis), an ``AzureLLMBackend`` is created from
             environment variables.
+        on_chunk_complete: Optional callback invoked after each chunk finishes.
+            Receives ``(chunk_index, total_chunks)`` — both zero-based index
+            and total count.
 
     Returns:
         A ``TranscriptionResult`` with the transcript and optional synthesis.
@@ -144,14 +173,14 @@ def transcribe_file(  # noqa: C901
 
     audio_path = _Path(path)
     if not audio_path.exists():
-        raise AudioFileError(f"Audio file not found: {audio_path}", path=path)
+        raise AudioFileError(f"Audio file not found: {audio_path}", path=str(path))
 
     # --- Resolve glossary ---
     glossary_text: str | None = None
     if glossary:
         gp = _Path(glossary)
         if not gp.exists():
-            raise AudioFileError(f"Glossary file not found: {gp}", path=glossary)
+            raise AudioFileError(f"Glossary file not found: {gp}", path=str(glossary))
         glossary_text = gp.read_text(encoding="utf-8")
 
     # --- Resolve LLM backend ---
@@ -170,6 +199,8 @@ def transcribe_file(  # noqa: C901
         resolved_transcription = AzureTranscriptionBackend.from_env()
 
     # --- Transcribe ---
+    result_chunks: tuple[ChunkResult, ...] | None = None
+
     with converted_audio(str(audio_path)) as conv_path:
         duration = get_audio_duration(conv_path)
         max_duration = 1400
@@ -180,19 +211,18 @@ def transcribe_file(  # noqa: C901
             and duration > max_duration
             and isinstance(resolved_transcription, AzureTranscriptionBackend)
         ):
-            logger.info("Audio duration: %.1f min (exceeds limit)", duration / 60)
+            logger.info("Audio duration: %.1f min — splitting into chunks", duration / 60)
 
-            with split_audio(conv_path, chunk_duration=900) as chunks:
-                chunk_dur = 900
-                chunk_infos = [(i, chunk, i * chunk_dur) for i, chunk in enumerate(chunks)]
+            with split_audio(conv_path, chunk_duration=chunk_duration) as chunks:
+                chunk_infos = [(i, chunk, i * chunk_duration) for i, chunk in enumerate(chunks)]
                 num_workers = min(parallel_workers, len(chunks))
                 logger.info(
-                    "Processing %d chunks with %d parallel workers...",
+                    "Processing %d chunks with %d parallel workers",
                     len(chunks),
                     num_workers,
                 )
 
-                results: dict[int, str] = {}
+                chunk_results: list[ChunkResult] = []
                 with ThreadPoolExecutor(max_workers=num_workers) as executor:
                     future_to_idx = {
                         executor.submit(
@@ -205,17 +235,20 @@ def transcribe_file(  # noqa: C901
                         for info in chunk_infos
                     }
                     for future in as_completed(future_to_idx):
-                        idx, text = future.result()
-                        results[idx] = text
-                        logger.info("Completed chunk %d/%d", idx + 1, len(chunks))
+                        cr = future.result()
+                        chunk_results.append(cr)
+                        logger.info("Completed chunk %d/%d", cr.index + 1, len(chunks))
+                        if on_chunk_complete is not None:
+                            on_chunk_complete(cr.index, len(chunks))
 
-                all_transcriptions = [results[i] for i in range(len(chunks))]
-                final_transcript = "\n".join(all_transcriptions)
+                chunk_results.sort(key=lambda c: c.index)
+                result_chunks = tuple(chunk_results)
+                final_transcript = "\n".join(c.transcript for c in chunk_results)
         else:
             final_transcript = resolved_transcription.transcribe(conv_path)
 
             if glossary_text and resolved_llm is not None:
-                logger.info("Applying glossary correction...")
+                logger.debug("Applying glossary correction")
                 final_transcript = correct_with_glossary(
                     final_transcript, glossary_text, resolved_llm
                 )
@@ -223,24 +256,25 @@ def transcribe_file(  # noqa: C901
     # --- Write output ---
     if output:
         _Path(output).write_text(final_transcript, encoding="utf-8")
-        logger.info("Transcript saved to: %s", output)
+        logger.debug("Transcript saved to: %s", output)
 
     # --- Synthesis ---
     synthesis_text: str | None = None
     if synthesise and resolved_llm is not None:
-        logger.info("Generating synthesis document...")
+        logger.info("Generating synthesis")
         synthesis_text = synthesise_transcript(final_transcript, resolved_llm)
 
         if output:
             stem = _Path(output).with_suffix("")
             synthesis_path = str(stem) + "_synthesis.md"
             _Path(synthesis_path).write_text(synthesis_text, encoding="utf-8")
-            logger.info("Synthesis saved to: %s", synthesis_path)
+            logger.debug("Synthesis saved to: %s", synthesis_path)
 
     return TranscriptionResult(
         transcript=final_transcript,
         synthesis=synthesis_text,
         duration_seconds=duration,
+        chunks=result_chunks,
     )
 
 
@@ -277,19 +311,26 @@ def _transcribe_chunk(
     backend: TranscriptionBackend,
     llm: LLMBackend | None,
     glossary_text: str | None,
-) -> tuple[int, str]:
+) -> ChunkResult:
     """Transcribe a single chunk and optionally correct it."""
     index, chunk_path, time_offset = chunk_info
-    logger.info("Transcribing chunk %d...", index + 1)
+    logger.debug("Transcribing chunk %d", index + 1)
 
+    t0 = time.monotonic()
     text = backend.transcribe(chunk_path, time_offset=time_offset)
 
     if glossary_text and llm is not None:
-        logger.info("Applying glossary correction to chunk %d...", index + 1)
+        logger.debug("Applying glossary correction to chunk %d", index + 1)
         text = correct_with_glossary(text, glossary_text, llm)
 
-    logger.info("Chunk %d complete", index + 1)
-    return (index, text)
+    elapsed = time.monotonic() - t0
+    logger.debug("Chunk %d complete (%.1fs)", index + 1, elapsed)
+    return ChunkResult(
+        index=index,
+        transcript=text,
+        start_offset_seconds=float(time_offset),
+        processing_time_seconds=elapsed,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -300,8 +341,9 @@ __all__ = [
     # High-level functions
     "transcribe_file",
     "synthesise_text",
-    # Result type
+    # Result types
     "TranscriptionResult",
+    "ChunkResult",
     # Exceptions
     "TranscriberError",
     "ConfigurationError",

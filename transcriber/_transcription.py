@@ -12,6 +12,7 @@ from types import ModuleType
 import requests
 
 from transcriber._exceptions import ConfigurationError, TranscriptionError
+from transcriber._retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +47,40 @@ class AzureTranscriptionBackend:
     Args:
         api_key: Azure API key.
         api_url: Azure API endpoint URL.
+        request_timeout: HTTP request timeout in seconds.
+        max_retries: Maximum number of attempts (1 = no retry).
+        base_delay: Base delay in seconds for exponential backoff between retries.
     """
 
-    def __init__(self, api_key: str, api_url: str) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        api_url: str,
+        *,
+        request_timeout: int = 600,
+        max_retries: int = 1,
+        base_delay: float = 2.0,
+    ) -> None:
         self.api_key = api_key
         self.api_url = api_url
+        self.request_timeout = request_timeout
+        self.max_retries = max_retries
+        self.base_delay = base_delay
 
     @classmethod
-    def from_env(cls) -> AzureTranscriptionBackend:
+    def from_env(
+        cls,
+        *,
+        request_timeout: int = 600,
+        max_retries: int = 1,
+        base_delay: float = 2.0,
+    ) -> AzureTranscriptionBackend:
         """Create an instance from environment variables.
+
+        Args:
+            request_timeout: HTTP request timeout in seconds.
+            max_retries: Maximum number of attempts (1 = no retry).
+            base_delay: Base delay in seconds for exponential backoff.
 
         Raises:
             ConfigurationError: If required environment variables are missing.
@@ -75,7 +101,13 @@ class AzureTranscriptionBackend:
             )
         if errors:
             raise ConfigurationError(errors)
-        return cls(api_key, api_url)  # type: ignore[arg-type]
+        return cls(
+            api_key,  # type: ignore[arg-type]
+            api_url,  # type: ignore[arg-type]
+            request_timeout=request_timeout,
+            max_retries=max_retries,
+            base_delay=base_delay,
+        )
 
     def transcribe(self, audio_path: str, *, time_offset: int = 0) -> str:
         """Transcribe an audio file via the Azure OpenAI API.
@@ -90,7 +122,14 @@ class AzureTranscriptionBackend:
         Raises:
             TranscriptionError: On API or I/O failure.
         """
-        try:
+        headers = {"api-key": self.api_key}
+        data = {
+            "model": "gpt-4o-transcribe-diarize",
+            "response_format": "diarized_json",
+            "chunking_strategy": "auto",
+        }
+
+        def _call() -> str:
             with open(audio_path, "rb") as audio_file:
                 files = {
                     "file": (
@@ -99,21 +138,14 @@ class AzureTranscriptionBackend:
                         "application/octet-stream",
                     )
                 }
-                headers = {"api-key": self.api_key}
-                data = {
-                    "model": "gpt-4o-transcribe-diarize",
-                    "response_format": "diarized_json",
-                    "chunking_strategy": "auto",
-                }
-
-                logger.info("Sending to API for transcription...")
+                logger.debug("Sending to API for transcription")
 
                 response = requests.post(
                     self.api_url,
                     headers=headers,
                     files=files,
                     data=data,
-                    timeout=600,
+                    timeout=self.request_timeout,
                 )
                 response.raise_for_status()
                 result = response.json()
@@ -135,6 +167,14 @@ class AzureTranscriptionBackend:
                         response_body=str(result),
                     )
 
+        try:
+            return retry_with_backoff(
+                _call,
+                max_retries=self.max_retries,
+                base_delay=self.base_delay,
+                exceptions=(requests.exceptions.RequestException,),
+                operation_name="transcription",
+            )
         except requests.exceptions.Timeout:
             raise TranscriptionError(
                 "Request timed out. The audio file may be too large."
@@ -210,19 +250,19 @@ class WhisperTranscriptionBackend:
         """
         whisper = _import_whisper()
 
-        logger.info("Loading Whisper model '%s'...", self.model_name)
-        logger.info("Using device: %s", self.device)
+        logger.info("Loading Whisper model '%s'", self.model_name)
+        logger.debug("Using device: %s", self.device)
 
         model = whisper.load_model(self.model_name, device=self.device)
-        logger.info("Model loaded successfully")
+        logger.debug("Model loaded successfully")
 
-        logger.info("Transcribing with local Whisper model...")
-        logger.info("Language: auto-detect")
+        logger.info("Transcribing with local Whisper model")
+        logger.debug("Language: auto-detect")
 
         result = model.transcribe(audio_path)
 
         if "language" in result:
-            logger.info("Detected language: %s", result["language"])
+            logger.debug("Detected language: %s", result["language"])
 
         segments = result.get("segments", [])
         if not segments:

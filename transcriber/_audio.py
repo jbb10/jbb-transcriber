@@ -61,15 +61,15 @@ def log_audio_file_info(file_path: Path) -> None:
     file_ext = file_path.suffix.lower()
 
     if file_ext in API_SUPPORTED_FORMATS:
-        logger.info("File format %s is directly supported by the API", file_ext)
+        logger.debug("File format %s is directly supported by the API", file_ext)
     elif file_ext in AUDIO_CONVERTIBLE:
-        logger.info("Audio file %s will be converted to a supported format", file_ext)
+        logger.debug("Audio file %s will be converted to a supported format", file_ext)
     elif file_ext in VIDEO_CONVERTIBLE or file_ext == ".mp4":
-        logger.info("Video file %s detected - audio will be extracted", file_ext)
+        logger.debug("Video file %s detected — audio will be extracted", file_ext)
     else:
-        logger.info("File extension '%s' is not recognized.", file_ext)
-        logger.info("Attempting to convert anyway...")
-        logger.info("API supports: %s", ", ".join(sorted(API_SUPPORTED_FORMATS)))
+        logger.debug("File extension '%s' is not recognized", file_ext)
+        logger.debug("Attempting to convert anyway...")
+        logger.debug("API supports: %s", ", ".join(sorted(API_SUPPORTED_FORMATS)))
 
 
 def get_audio_duration(file_path: str) -> float | None:
@@ -109,12 +109,12 @@ def _convert_to_m4a(file_path: str) -> str:
     file_ext = Path(file_path).suffix.lower()
 
     if file_ext in {".mp4", ".webm"}:
-        logger.info(
-            "%s file detected - extracting audio track to reduce file size...",
+        logger.debug(
+            "%s file detected — extracting audio track to reduce file size",
             file_ext.upper(),
         )
     else:
-        logger.info("Converting %s to M4A format...", file_ext)
+        logger.debug("Converting %s to M4A format", file_ext)
 
     temp_file = tempfile.NamedTemporaryFile(suffix=".m4a", delete=False)
     temp_path = temp_file.name
@@ -157,7 +157,7 @@ def _convert_to_m4a(file_path: str) -> str:
 
         input_container.close()
         output_container.close()
-        logger.info("Conversion complete")
+        logger.debug("Conversion complete")
         return temp_path
 
     except (AudioFileError, ConversionError):
@@ -196,7 +196,7 @@ def converted_audio(file_path: str) -> Generator[str, None, None]:
         yield converted_path
     finally:
         if os.path.exists(converted_path):
-            logger.info("Cleaning up converted audio file...")
+            logger.debug("Cleaning up converted audio file")
             os.unlink(converted_path)
 
 
@@ -214,7 +214,7 @@ def _split_audio_file(file_path: str, chunk_duration: int = 900) -> tuple[list[s
         AudioFileError: If the file has no audio stream.
         ConversionError: If splitting fails.
     """
-    logger.info("Splitting audio into %d-minute chunks...", chunk_duration // 60)
+    logger.info("Splitting audio into %d-minute chunks", chunk_duration // 60)
 
     temp_dir = tempfile.mkdtemp()
     chunks: list[str] = []
@@ -285,7 +285,7 @@ def _split_audio_file(file_path: str, chunk_duration: int = 900) -> tuple[list[s
 
         input_container.close()
 
-        logger.info("Split into %d chunks", len(chunks))
+        logger.debug("Split into %d chunks", len(chunks))
         return chunks, temp_dir
 
     except (AudioFileError, ConversionError):
@@ -311,10 +311,10 @@ def split_audio(file_path: str, chunk_duration: int = 900) -> Generator[list[str
     try:
         yield chunks
     finally:
-        logger.info("Cleaning up temporary audio files...")
+        logger.debug("Cleaning up temporary audio files")
         for chunk in chunks:
             if os.path.exists(chunk):
                 os.unlink(chunk)
         if os.path.exists(temp_dir):
             os.rmdir(temp_dir)
-        logger.info("Temporary files cleaned up")
+        logger.debug("Temporary files cleaned up")

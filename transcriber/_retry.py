@@ -16,6 +16,7 @@ def retry_with_backoff(
     fn: Callable[[], _T],
     *,
     max_retries: int = 3,
+    base_delay: float = 2.0,
     exceptions: tuple[type[BaseException], ...] = (Exception,),
     operation_name: str = "operation",
 ) -> _T:
@@ -24,6 +25,8 @@ def retry_with_backoff(
     Args:
         fn: Zero-argument callable to execute.
         max_retries: Maximum number of attempts.
+        base_delay: Base delay in seconds for the first retry.  Doubles on
+            each subsequent attempt (``base_delay``, ``2 * base_delay``, …).
         exceptions: Tuple of exception types to catch and retry on.
         operation_name: Human-readable name for log messages.
 
@@ -37,9 +40,9 @@ def retry_with_backoff(
     for attempt in range(max_retries):
         try:
             if attempt > 0:
-                backoff = 2**attempt  # 2s, 4s, 8s, ...
-                logger.info(
-                    "Retry %s attempt %d/%d after %ds backoff...",
+                backoff = base_delay * 2 ** (attempt - 1)
+                logger.debug(
+                    "Retry %s attempt %d/%d after %ds backoff",
                     operation_name,
                     attempt + 1,
                     max_retries,
