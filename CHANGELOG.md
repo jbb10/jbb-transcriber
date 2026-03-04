@@ -1,6 +1,12 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [2.1.0] - 2026-03-04
+
+### Features
+- Add configurable timeout, retry, progress callback, chunk duration and structured ChunkResult
+
+
 ## [2.0.0] - 2026-03-01
 
 ### Features
