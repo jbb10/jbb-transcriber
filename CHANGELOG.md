@@ -1,6 +1,12 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [3.0.0] - 2026-03-05
+
+### Features
+- Add LLMError exception and smart retry with transient error classification (**BREAKING**)
+
+
 ## [2.1.0] - 2026-03-04
 
 ### Features
