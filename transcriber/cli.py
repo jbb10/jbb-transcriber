@@ -310,14 +310,17 @@ def positive_int(value: str) -> int:
 
 
 def _write_output(text: str, output_file_path: str) -> None:
-    """Write text to a file."""
+    """Write text to a file.
+
+    Raises:
+        TranscriberError: If the file cannot be written.
+    """
     try:
         with open(output_file_path, "w", encoding="utf-8") as f:
             f.write(text)
         logger.info("Saved to: %s", output_file_path)
     except OSError as e:
-        logger.error("Could not write to output file: %s", e)
-        sys.exit(1)
+        raise transcriber.TranscriberError(f"Could not write to output file: {e}") from e
 
 
 # ---------------------------------------------------------------------------

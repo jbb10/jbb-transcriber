@@ -6,6 +6,9 @@ Only the CLI layer (cli.py) catches these and converts them to exit codes.
 
 from __future__ import annotations
 
+# Status codes considered transient / retryable
+_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+
 
 class TranscriberError(Exception):
     """Base exception for all transcriber errors."""
@@ -50,6 +53,51 @@ class TranscriptionError(TranscriberError):
         self.response_body = response_body
         super().__init__(message)
 
+    @property
+    def is_retryable(self) -> bool:
+        """Whether this error is likely transient and worth retrying.
+
+        Returns ``True`` for connection-level failures (no status code) and
+        for HTTP status codes 429, 500, 502, 503, 504.  Returns ``False``
+        for client errors like 400, 401, 403, 404.
+        """
+        if self.status_code is None:
+            return True  # Connection-level failure — always retry
+        return self.status_code in _RETRYABLE_STATUS_CODES
+
+
+class LLMError(TranscriberError):
+    """LLM API request failure (glossary correction or synthesis)."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        response_body: str | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.response_body = response_body
+        super().__init__(message)
+
+    @property
+    def is_retryable(self) -> bool:
+        """Whether this error is likely transient and worth retrying."""
+        if self.status_code is None:
+            return True
+        return self.status_code in _RETRYABLE_STATUS_CODES
+
 
 class SynthesisError(TranscriberError):
     """Synthesis generation failure."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        response_body: str | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.response_body = response_body
+        super().__init__(message)

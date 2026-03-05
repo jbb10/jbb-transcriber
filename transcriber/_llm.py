@@ -12,9 +12,9 @@ from pathlib import Path
 
 import requests
 
-from transcriber._exceptions import ConfigurationError, SynthesisError, TranscriptionError
+from transcriber._exceptions import ConfigurationError, LLMError, SynthesisError
 from transcriber._protocols import LLMBackend
-from transcriber._retry import retry_with_backoff
+from transcriber._retry import is_transient_http_error, retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ class AzureLLMBackend:
             The completion text.
 
         Raises:
-            TranscriptionError: If the request fails after all retries.
+            LLMError: If the request fails after all retries.
         """
         headers = {"api-key": self.api_key, "Content-Type": "application/json"}
         data = {
@@ -151,19 +151,37 @@ class AzureLLMBackend:
                 if content.strip():
                     return content.strip()
 
-            raise TranscriptionError("Unexpected response format from LLM API")
+            raise LLMError(
+                "Unexpected response format from LLM API",
+                response_body=str(result)[:500],
+            )
 
         try:
             return retry_with_backoff(
                 _call,
                 max_retries=max_retries,
-                exceptions=(requests.exceptions.RequestException, TranscriptionError),
+                exceptions=(requests.exceptions.RequestException, LLMError),
                 operation_name="LLM completion",
+                should_retry=is_transient_http_error,
             )
         except requests.exceptions.Timeout:
-            raise TranscriptionError("LLM request timed out") from None
+            raise LLMError("LLM request timed out") from None
         except requests.exceptions.RequestException as e:
-            raise TranscriptionError(f"LLM request failed: {e}") from e
+            body = None
+            status = None
+            if hasattr(e, "response") and e.response is not None:
+                body = e.response.text[:500] if e.response.text else None
+                status = e.response.status_code
+            logger.error(
+                "LLM API request failed [HTTP %s]: %s",
+                status or "N/A",
+                body[:200] if body else str(e),
+            )
+            raise LLMError(
+                f"LLM request failed: {e}",
+                status_code=status,
+                response_body=body,
+            ) from e
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +212,7 @@ def correct_with_glossary(
     prompt = build_correction_prompt(transcript, glossary_text)
     try:
         return llm.complete(prompt, temperature=0.1, max_retries=max_retries)
-    except (TranscriptionError, Exception):
+    except (LLMError, SynthesisError):
         logger.warning(
             "Glossary correction failed after %d attempts. Falling back to uncorrected transcript.",
             max_retries,
@@ -224,5 +242,16 @@ def synthesise_transcript(
     prompt = build_synthesis_prompt(transcript)
     try:
         return llm.complete(prompt, temperature=0.3, max_retries=max_retries)
-    except (TranscriptionError, Exception) as e:
-        raise SynthesisError(f"Synthesis failed after {max_retries} attempts: {e}") from e
+    except (LLMError, SynthesisError) as e:
+        status = getattr(e, "status_code", None)
+        body = getattr(e, "response_body", None)
+        logger.error(
+            "Synthesis generation failed after %d attempts: %s",
+            max_retries,
+            e,
+        )
+        raise SynthesisError(
+            f"Synthesis failed after {max_retries} attempts: {e}",
+            status_code=status,
+            response_body=body,
+        ) from e

@@ -51,6 +51,6 @@ class LLMBackend(Protocol):
             The LLM's response text.
 
         Raises:
-            TranscriptionError: If the request fails after all retries.
+            LLMError: If the request fails after all retries.
         """
         ...

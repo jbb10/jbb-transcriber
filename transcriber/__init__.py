@@ -30,7 +30,7 @@ import logging
 import os
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 from transcriber._audio import converted_audio, get_audio_duration, split_audio
@@ -38,6 +38,7 @@ from transcriber._exceptions import (
     AudioFileError,
     ConfigurationError,
     ConversionError,
+    LLMError,
     SynthesisError,
     TranscriberError,
     TranscriptionError,
@@ -167,6 +168,7 @@ def transcribe_file(  # noqa: C901
         AudioFileError: File not found or unreadable.
         ConversionError: Format conversion failure.
         TranscriptionError: Transcription API failure.
+        LLMError: LLM API failure.
         SynthesisError: Synthesis generation failure.
     """
     from pathlib import Path as _Path
@@ -224,7 +226,7 @@ def transcribe_file(  # noqa: C901
 
                 chunk_results: list[ChunkResult] = []
                 with ThreadPoolExecutor(max_workers=num_workers) as executor:
-                    future_to_idx = {
+                    future_to_idx: dict[Future[ChunkResult], int] = {
                         executor.submit(
                             _transcribe_chunk,
                             info,
@@ -234,12 +236,25 @@ def transcribe_file(  # noqa: C901
                         ): info[0]
                         for info in chunk_infos
                     }
-                    for future in as_completed(future_to_idx):
-                        cr = future.result()
-                        chunk_results.append(cr)
-                        logger.info("Completed chunk %d/%d", cr.index + 1, len(chunks))
-                        if on_chunk_complete is not None:
-                            on_chunk_complete(cr.index, len(chunks))
+                    try:
+                        for future in as_completed(future_to_idx):
+                            cr = future.result()
+                            chunk_results.append(cr)
+                            logger.info("Completed chunk %d/%d", cr.index + 1, len(chunks))
+                            if on_chunk_complete is not None:
+                                on_chunk_complete(cr.index, len(chunks))
+                    except (TranscriptionError, LLMError, TranscriberError) as exc:
+                        # Cancel remaining futures to avoid burning API quota
+                        cancelled = 0
+                        for f in future_to_idx:
+                            if f.cancel():
+                                cancelled += 1
+                        logger.error(
+                            "Chunk processing failed — cancelled %d pending chunks: %s",
+                            cancelled,
+                            exc,
+                        )
+                        raise
 
                 chunk_results.sort(key=lambda c: c.index)
                 result_chunks = tuple(chunk_results)
@@ -317,7 +332,11 @@ def _transcribe_chunk(
     logger.debug("Transcribing chunk %d", index + 1)
 
     t0 = time.monotonic()
-    text = backend.transcribe(chunk_path, time_offset=time_offset)
+    try:
+        text = backend.transcribe(chunk_path, time_offset=time_offset)
+    except (TranscriptionError, TranscriberError) as exc:
+        logger.error("Chunk %d failed permanently: %s", index + 1, exc)
+        raise
 
     if glossary_text and llm is not None:
         logger.debug("Applying glossary correction to chunk %d", index + 1)
@@ -350,6 +369,7 @@ __all__ = [
     "AudioFileError",
     "ConversionError",
     "TranscriptionError",
+    "LLMError",
     "SynthesisError",
     # Backends
     "AzureTranscriptionBackend",

@@ -12,7 +12,7 @@ from types import ModuleType
 import requests
 
 from transcriber._exceptions import ConfigurationError, TranscriptionError
-from transcriber._retry import retry_with_backoff
+from transcriber._retry import is_transient_http_error, retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class AzureTranscriptionBackend:
         api_key: Azure API key.
         api_url: Azure API endpoint URL.
         request_timeout: HTTP request timeout in seconds.
-        max_retries: Maximum number of attempts (1 = no retry).
+        max_retries: Maximum number of attempts (default 3).
         base_delay: Base delay in seconds for exponential backoff between retries.
     """
 
@@ -58,7 +58,7 @@ class AzureTranscriptionBackend:
         api_url: str,
         *,
         request_timeout: int = 600,
-        max_retries: int = 1,
+        max_retries: int = 3,
         base_delay: float = 2.0,
     ) -> None:
         self.api_key = api_key
@@ -72,14 +72,14 @@ class AzureTranscriptionBackend:
         cls,
         *,
         request_timeout: int = 600,
-        max_retries: int = 1,
+        max_retries: int = 3,
         base_delay: float = 2.0,
     ) -> AzureTranscriptionBackend:
         """Create an instance from environment variables.
 
         Args:
             request_timeout: HTTP request timeout in seconds.
-            max_retries: Maximum number of attempts (1 = no retry).
+            max_retries: Maximum number of attempts (default 3).
             base_delay: Base delay in seconds for exponential backoff.
 
         Raises:
@@ -174,6 +174,7 @@ class AzureTranscriptionBackend:
                 base_delay=self.base_delay,
                 exceptions=(requests.exceptions.RequestException,),
                 operation_name="transcription",
+                should_retry=is_transient_http_error,
             )
         except requests.exceptions.Timeout:
             raise TranscriptionError(
@@ -183,8 +184,13 @@ class AzureTranscriptionBackend:
             body = None
             status = None
             if hasattr(e, "response") and e.response is not None:
-                body = e.response.text
+                body = e.response.text[:500] if e.response.text else None
                 status = e.response.status_code
+            logger.error(
+                "Transcription API request failed [HTTP %s]: %s",
+                status or "N/A",
+                body[:200] if body else str(e),
+            )
             raise TranscriptionError(
                 f"API request failed: {e}",
                 status_code=status,

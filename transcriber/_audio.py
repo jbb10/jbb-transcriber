@@ -88,8 +88,13 @@ def get_audio_duration(file_path: str) -> float | None:
             for stream in container.streams.audio:  # type: ignore[union-attr]
                 if stream.duration is not None:
                     return float(stream.duration * stream.time_base)  # type: ignore[arg-type]
+            logger.warning(
+                "Could not determine audio duration for %s: no duration metadata",
+                file_path,
+            )
             return None
-    except Exception:
+    except Exception as e:
+        logger.warning("Could not determine audio duration for %s: %s", file_path, e)
         return None
 
 
