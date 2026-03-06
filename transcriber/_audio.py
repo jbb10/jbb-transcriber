@@ -31,6 +31,14 @@ AUDIO_CONVERTIBLE = {".aac", ".ogg", ".flac", ".wma", ".opus", ".aiff", ".aif"}
 # Video formats we can extract audio from
 VIDEO_CONVERTIBLE = {".avi", ".mov", ".mkv", ".flv", ".wmv", ".webm", ".3gp", ".mts", ".m2ts"}
 
+# Text/transcript formats that can be passed directly for synthesis
+TEXT_EXTENSIONS = {".txt", ".md", ".srt", ".vtt"}
+
+
+def is_text_file(path: Path) -> bool:
+    """Check whether a path has a recognised text/transcript extension."""
+    return path.suffix.lower() in TEXT_EXTENSIONS
+
 
 def probe_audio_stream(file_path: Path) -> tuple[bool, str | None]:
     """Check whether a file contains an audio stream.

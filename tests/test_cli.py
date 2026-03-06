@@ -491,3 +491,57 @@ class TestCLISynthesiseOnly:
 
         assert result.returncode == 0
         assert "--synthesise-only" in result.stdout
+
+
+class TestCLITextFileAutoDetection:
+    """Tests for auto-detecting text files and running synthesis."""
+
+    def test_cli_text_file_auto_synthesis(self, azure_text_config):
+        """Passing a .txt file without flags auto-enables synthesis-only mode."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            transcript_path = os.path.join(temp_dir, "meeting.txt")
+            with open(transcript_path, "w", encoding="utf-8") as f:
+                f.write(
+                    "[0.00s - 10.00s] A: We decided to migrate.\n"
+                    "[10.00s - 20.00s] B: John will update CI.\n"
+                )
+
+            expected_synthesis = os.path.join(temp_dir, "meeting_synthesis.md")
+
+            env = os.environ.copy()
+            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
+            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+
+            result = subprocess.run(
+                [sys.executable, "-m", "transcriber", transcript_path],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+
+            assert result.returncode == 0, f"CLI text auto-detect failed: {result.stderr}"
+            assert os.path.exists(expected_synthesis), "Synthesis file should be created"
+            assert "Text file detected" in result.stderr, "Should notify user about auto-detection"
+
+    def test_cli_text_file_notification_shown(self):
+        """Text file auto-detection prints a visible notification."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            transcript_path = os.path.join(temp_dir, "notes.md")
+            with open(transcript_path, "w", encoding="utf-8") as f:
+                f.write("Some notes")
+
+            env = os.environ.copy()
+            env["AZURE_TEXT_API_KEY"] = "test-key"
+            env["AZURE_TEXT_URL"] = "https://test.example.com"
+
+            result = subprocess.run(
+                [sys.executable, "-m", "transcriber", transcript_path],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            # Will fail at synthesis (fake creds), but notification should appear
+            assert "Text file detected" in result.stderr

@@ -621,3 +621,104 @@ class TestLocalModeValidation:
 
         errors_text = " ".join(exc_info.value.errors)
         assert "openai-whisper" in errors_text
+
+
+class TestTextFileAutoDetection:
+    """Tests for auto-detecting text files and routing to synthesis-only mode."""
+
+    @pytest.fixture
+    def valid_audio_file(self, short_audio_file):
+        """Return a valid audio file path."""
+        return short_audio_file
+
+    @pytest.fixture
+    def valid_kwargs(self, valid_audio_file):
+        """Create valid keyword args for validate_cli_config."""
+        return {
+            "audio_file": valid_audio_file,
+            "output_file": None,
+            "glossary": None,
+            "synthesise": False,
+            "synthesise_only": False,
+            "parallel_workers": 15,
+            "local": False,
+            "model": "base",
+        }
+
+    @pytest.mark.parametrize("ext", [".txt", ".md", ".srt", ".vtt"])
+    def test_text_file_auto_enables_synthesise_only(self, valid_kwargs, monkeypatch, tmp_path, ext):
+        """Text file extensions auto-enable synthesis-only mode."""
+        transcript = tmp_path / f"meeting{ext}"
+        transcript.write_text("Some transcript content")
+
+        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
+        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        valid_kwargs["audio_file"] = str(transcript)
+
+        config = validate_cli_config(**valid_kwargs)
+
+        assert config.synthesise_only is True
+
+    def test_text_file_with_synthesise_flag_coerced(self, valid_kwargs, monkeypatch, tmp_path):
+        """--synthesise with a text file is coerced to synthesis-only (no error)."""
+        transcript = tmp_path / "notes.txt"
+        transcript.write_text("Some notes")
+
+        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
+        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        valid_kwargs["audio_file"] = str(transcript)
+        valid_kwargs["synthesise"] = True
+
+        config = validate_cli_config(**valid_kwargs)
+
+        assert config.synthesise_only is True
+
+    def test_text_file_no_transcription_creds_needed(self, valid_kwargs, monkeypatch, tmp_path):
+        """Text files do not require Azure transcription credentials."""
+        transcript = tmp_path / "transcript.txt"
+        transcript.write_text("Some transcript content")
+
+        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
+        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
+        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
+        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        valid_kwargs["audio_file"] = str(transcript)
+
+        config = validate_cli_config(**valid_kwargs)
+
+        assert config.synthesise_only is True
+
+    def test_text_file_requires_llm_creds(self, valid_kwargs, monkeypatch, tmp_path):
+        """Text files require LLM credentials for synthesis."""
+        transcript = tmp_path / "transcript.txt"
+        transcript.write_text("Some transcript content")
+
+        monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
+        monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
+        valid_kwargs["audio_file"] = str(transcript)
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**valid_kwargs)
+
+        errors_text = " ".join(exc_info.value.errors)
+        assert "AZURE_TEXT_API_KEY" in errors_text
+
+    def test_text_file_not_found(self, valid_kwargs, monkeypatch):
+        """Non-existent text file raises ConfigurationError."""
+        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
+        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        valid_kwargs["audio_file"] = "/nonexistent/transcript.txt"
+
+        with pytest.raises(ConfigurationError) as exc_info:
+            validate_cli_config(**valid_kwargs)
+
+        assert any("Transcript file not found" in e for e in exc_info.value.errors)
+
+    def test_audio_extension_not_auto_detected(self, valid_kwargs, monkeypatch):
+        """Audio file extensions are NOT auto-detected as text files."""
+        monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
+        monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
+
+        config = validate_cli_config(**valid_kwargs)
+
+        assert config.synthesise_only is False

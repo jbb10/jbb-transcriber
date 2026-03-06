@@ -139,7 +139,7 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
     Raises:
         ConfigurationError: If any validation fails.
     """
-    from transcriber._audio import log_audio_file_info, probe_audio_stream
+    from transcriber._audio import is_text_file, log_audio_file_info, probe_audio_stream
 
     errors: list[str] = []
 
@@ -149,6 +149,13 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
 
     # --- Paths ---
     audio_path = Path(audio_file)
+
+    # --- Auto-detect text files → synthesis-only mode ---
+    if not synthesise_only and is_text_file(audio_path):
+        synthesise_only = True
+        synthesise = False  # clear to avoid the conflict check
+        logger.info("Text file detected — skipping transcription and running synthesis only.")
+
     if output_file is None:
         out_path = audio_path.with_suffix(".txt")
     else:
@@ -427,6 +434,8 @@ With synthesis:
 
 Synthesise an existing transcript:
   transcribe meeting.txt --synthesise-only
+  transcribe meeting.txt
+  (text files are auto-detected — synthesis runs without needing --synthesise-only)
   (reads meeting.txt and creates meeting_synthesis.md)
 
 Note: Files longer than 25 minutes will be automatically split into chunks.
