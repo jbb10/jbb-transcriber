@@ -40,7 +40,7 @@ def azure_transcribe_config():
     }
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def azure_transcription_backend(azure_transcribe_config):
     """An AzureTranscriptionBackend built from test credentials."""
     from transcriber.backends import create_azure_transcription_backend
@@ -71,7 +71,7 @@ def azure_text_config(azure_transcribe_config):
     }
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def azure_llm_backend(azure_text_config):
     """An AzureLLMBackend built from test credentials."""
     from transcriber.backends import create_azure_llm_backend
