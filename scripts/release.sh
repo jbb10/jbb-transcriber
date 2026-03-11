@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Release script for transcriber
-# Usage: ./scripts/release.sh [--patch|--minor|--major]
+# Usage: ./scripts/release.sh [--patch|--minor|--major] [--yes]
 #
 # Automatically determines version bump from conventional commits:
 #   fix:              → patch (0.0.X)
@@ -30,16 +30,21 @@ error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 # Parse command line arguments
 FORCE_BUMP=""
+AUTO_YES=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --patch) FORCE_BUMP="patch"; shift ;;
         --minor) FORCE_BUMP="minor"; shift ;;
         --major) FORCE_BUMP="major"; shift ;;
+        --yes|-y) AUTO_YES=true; shift ;;
         -h|--help)
-            echo "Usage: $0 [--patch|--minor|--major]"
+            echo "Usage: $0 [--patch|--minor|--major] [--yes|-y]"
             echo ""
             echo "Automatically determines version bump from conventional commits,"
             echo "or use flags to force a specific bump type."
+            echo ""
+            echo "Options:"
+            echo "  --yes, -y    Skip all confirmation prompts (for CI/automation)"
             exit 0
             ;;
         *) error "Unknown option: $1" ;;
@@ -65,10 +70,14 @@ fi
 CURRENT_BRANCH=$(git branch --show-current)
 if [ "$CURRENT_BRANCH" != "main" ]; then
     warn "Not on main branch (currently on: $CURRENT_BRANCH)"
-    read -p "Continue anyway? (y/N) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
+    if $AUTO_YES; then
+        info "--yes passed, continuing on non-main branch"
+    else
+        read -p "Continue anyway? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
     fi
 fi
 
@@ -175,11 +184,13 @@ esac
 echo ""
 info "Version bump: $CURRENT_VERSION → $NEW_VERSION ($BUMP_TYPE)"
 echo ""
-read -p "Proceed with release? (y/N) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    info "Aborted."
-    exit 0
+if ! $AUTO_YES; then
+    read -p "Proceed with release? (y/N) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        info "Aborted."
+        exit 0
+    fi
 fi
 
 # Run linting
@@ -218,14 +229,16 @@ git tag -a "v$NEW_VERSION" -m "Release v$NEW_VERSION"
 # Confirm before pushing
 echo ""
 warn "Ready to push v$NEW_VERSION to remote."
-read -p "Continue? (y/N) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    warn "Aborting. Rolling back changes..."
-    git tag -d "v$NEW_VERSION"
-    git reset --soft HEAD~1
-    git checkout pyproject.toml
-    exit 1
+if ! $AUTO_YES; then
+    read -p "Continue? (y/N) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        warn "Aborting. Rolling back changes..."
+        git tag -d "v$NEW_VERSION"
+        git reset --soft HEAD~1
+        git checkout pyproject.toml
+        exit 1
+    fi
 fi
 
 # Push to remote
