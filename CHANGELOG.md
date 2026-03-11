@@ -1,6 +1,18 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [3.1.0] - 2026-03-11
+
+### Bug Fixes
+- Use function-scoped fixtures for async backends
+
+
+### Features
+- Add --yes flag to release script for CI/AI automation
+- Async-first provider-agnostic architecture with DI and httpx
+- Auto-detect text files for synthesis in CLI
+
+
 ## [3.0.0] - 2026-03-05
 
 ### Features
