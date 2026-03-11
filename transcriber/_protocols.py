@@ -2,6 +2,10 @@
 
 These define the interfaces that transcription and LLM backends must implement.
 Library users can provide custom implementations via these protocols.
+
+Note: ``@runtime_checkable`` on async protocols means ``isinstance()`` checks
+will match sync implementations too — Python does not enforce ``async`` at the
+protocol level.  The type checker catches mismatches at call sites.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ class TranscriptionBackend(Protocol):
     Implementations must accept an audio file path and return formatted text.
     """
 
-    def transcribe(self, audio_path: str, *, time_offset: int = 0) -> str:
+    async def transcribe(self, audio_path: str, *, time_offset: int = 0) -> str:
         """Transcribe an audio file to text.
 
         Args:
@@ -39,13 +43,12 @@ class LLMBackend(Protocol):
     Used for glossary correction and synthesis generation.
     """
 
-    def complete(self, prompt: str, *, temperature: float = 0.1, max_retries: int = 3) -> str:
+    async def complete(self, prompt: str, *, temperature: float = 0.1) -> str:
         """Send a prompt to the LLM and return the completion.
 
         Args:
             prompt: The full prompt text.
             temperature: Sampling temperature.
-            max_retries: Number of retry attempts with exponential backoff.
 
         Returns:
             The LLM's response text.

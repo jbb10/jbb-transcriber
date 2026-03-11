@@ -2,7 +2,8 @@
 Tests for transcript synthesis functionality.
 """
 
-from transcriber._llm import build_synthesis_prompt, synthesise_transcript
+from transcriber._pipeline import synthesise_transcript
+from transcriber._prompts import build_synthesis_prompt
 
 
 class TestSynthesisPrompt:
@@ -29,7 +30,7 @@ class TestSynthesisPrompt:
 class TestSynthesisGeneration:
     """Tests for synthesis transcript generation."""
 
-    def test_synthesise_transcript_basic(self, azure_llm_backend):
+    async def test_synthesise_transcript_basic(self, azure_llm_backend):
         """synthesise_transcript generates a synthesis document."""
         test_transcript = (
             """[0.00s - 10.00s] A: Welcome everyone. """
@@ -41,30 +42,30 @@ class TestSynthesisGeneration:
 [50.00s - 60.00s] B: The main risk is dependency on the legacy system being deprecated."""
         )
 
-        synthesis = synthesise_transcript(test_transcript, azure_llm_backend)
+        synthesis = await synthesise_transcript(test_transcript, llm_backend=azure_llm_backend)
 
         assert synthesis, "Synthesis should not be empty"
         assert len(synthesis) > 100, "Synthesis should have substantial content"
 
-    def test_synthesise_transcript_contains_key_info(self, azure_llm_backend):
+    async def test_synthesise_transcript_contains_key_info(self, azure_llm_backend):
         """Synthesis captures key information from transcript."""
         test_transcript = """[0.00s - 15.00s] A: We've decided to use Python for the new service.
 [15.00s - 30.00s] B: Action item: Sarah will set up the repository by Friday."""
 
-        synthesis = synthesise_transcript(test_transcript, azure_llm_backend)
+        synthesis = await synthesise_transcript(test_transcript, llm_backend=azure_llm_backend)
 
         synthesis_lower = synthesis.lower()
         assert "python" in synthesis_lower or "decision" in synthesis_lower, (
             "Synthesis should reference the Python decision"
         )
 
-    def test_synthesise_full_transcription(
+    async def test_synthesise_full_transcription(
         self, short_audio_file, azure_transcription_backend, azure_llm_backend
     ):
         """Synthesis works with a real transcription."""
-        transcription = azure_transcription_backend.transcribe(short_audio_file)
+        transcription = await azure_transcription_backend.transcribe(short_audio_file)
 
-        synthesis = synthesise_transcript(transcription, azure_llm_backend)
+        synthesis = await synthesise_transcript(transcription, llm_backend=azure_llm_backend)
 
         assert synthesis, "Synthesis should not be empty"
         assert len(synthesis) > 50, "Synthesis should have substantial content"

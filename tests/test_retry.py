@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
-import requests
-import requests.exceptions
 
 from transcriber._exceptions import LLMError, TranscriptionError
 from transcriber._retry import (
@@ -25,31 +23,28 @@ class TestIsTransientHttpError:
     """Tests for is_transient_http_error predicate."""
 
     def test_timeout_is_transient(self) -> None:
-        assert is_transient_http_error(requests.exceptions.Timeout()) is True
+        assert is_transient_http_error(httpx.TimeoutException("timeout")) is True
 
     def test_connection_error_is_transient(self) -> None:
-        assert is_transient_http_error(requests.exceptions.ConnectionError()) is True
+        assert is_transient_http_error(httpx.ConnectError("connect failed")) is True
 
     @pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
     def test_retryable_http_status(self, status: int) -> None:
-        resp = MagicMock()
-        resp.status_code = status
-        exc = requests.exceptions.HTTPError(response=resp)
+        request = httpx.Request("POST", "https://example.com")
+        response = httpx.Response(status, request=request)
+        exc = httpx.HTTPStatusError("error", request=request, response=response)
         assert is_transient_http_error(exc) is True
 
     @pytest.mark.parametrize("status", [400, 401, 403, 404, 405, 422])
     def test_non_retryable_http_status(self, status: int) -> None:
-        resp = MagicMock()
-        resp.status_code = status
-        exc = requests.exceptions.HTTPError(response=resp)
+        request = httpx.Request("POST", "https://example.com")
+        response = httpx.Response(status, request=request)
+        exc = httpx.HTTPStatusError("error", request=request, response=response)
         assert is_transient_http_error(exc) is False
 
-    def test_http_error_without_response(self) -> None:
-        exc = requests.exceptions.HTTPError()
+    def test_generic_http_error_is_transient(self) -> None:
+        exc = httpx.HTTPError("something went wrong")
         assert is_transient_http_error(exc) is True
-
-    def test_chunked_encoding_error_is_transient(self) -> None:
-        assert is_transient_http_error(requests.exceptions.ChunkedEncodingError()) is True
 
     def test_transcription_error_retryable(self) -> None:
         exc = TranscriptionError("fail", status_code=503)
@@ -87,48 +82,50 @@ class TestExtractRetryAfter:
         assert _extract_retry_after(ValueError("x")) is None
 
     def test_no_header(self) -> None:
-        resp = MagicMock()
-        resp.headers = {}
-        exc = requests.exceptions.HTTPError(response=resp)
+        request = httpx.Request("POST", "https://example.com")
+        response = httpx.Response(429, request=request)
+        exc = httpx.HTTPStatusError("error", request=request, response=response)
         assert _extract_retry_after(exc) is None
 
     def test_integer_seconds(self) -> None:
-        resp = MagicMock()
-        resp.headers = {"Retry-After": "30"}
-        exc = requests.exceptions.HTTPError(response=resp)
+        request = httpx.Request("POST", "https://example.com")
+        response = httpx.Response(429, request=request, headers={"Retry-After": "30"})
+        exc = httpx.HTTPStatusError("error", request=request, response=response)
         assert _extract_retry_after(exc) == 30.0
 
     def test_float_seconds(self) -> None:
-        resp = MagicMock()
-        resp.headers = {"Retry-After": "2.5"}
-        exc = requests.exceptions.HTTPError(response=resp)
+        request = httpx.Request("POST", "https://example.com")
+        response = httpx.Response(429, request=request, headers={"Retry-After": "2.5"})
+        exc = httpx.HTTPStatusError("error", request=request, response=response)
         assert _extract_retry_after(exc) == 2.5
 
     def test_unparseable_value(self) -> None:
-        resp = MagicMock()
-        resp.headers = {"Retry-After": "Thu, 01 Jan 2099 00:00:00 GMT"}
-        exc = requests.exceptions.HTTPError(response=resp)
+        request = httpx.Request("POST", "https://example.com")
+        response = httpx.Response(
+            429, request=request, headers={"Retry-After": "Thu, 01 Jan 2099 00:00:00 GMT"}
+        )
+        exc = httpx.HTTPStatusError("error", request=request, response=response)
         assert _extract_retry_after(exc) is None
 
 
 # ---------------------------------------------------------------------------
-# retry_with_backoff tests
+# retry_with_backoff tests (async)
 # ---------------------------------------------------------------------------
 
 
 class TestRetryWithBackoff:
-    """Tests for the retry_with_backoff function."""
+    """Tests for the async retry_with_backoff function."""
 
-    def test_success_on_first_try(self) -> None:
-        fn = MagicMock(return_value="ok")
-        result = retry_with_backoff(fn, max_retries=3, operation_name="test")
+    async def test_success_on_first_try(self) -> None:
+        fn = AsyncMock(return_value="ok")
+        result = await retry_with_backoff(fn, max_retries=3, operation_name="test")
         assert result == "ok"
         assert fn.call_count == 1
 
-    @patch("transcriber._retry.time.sleep")
-    def test_success_after_transient_failure(self, mock_sleep: MagicMock) -> None:
-        fn = MagicMock(side_effect=[ValueError("transient"), "ok"])
-        result = retry_with_backoff(
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_success_after_transient_failure(self, mock_sleep: AsyncMock) -> None:
+        fn = AsyncMock(side_effect=[ValueError("transient"), "ok"])
+        result = await retry_with_backoff(
             fn,
             max_retries=3,
             exceptions=(ValueError,),
@@ -138,13 +135,13 @@ class TestRetryWithBackoff:
         assert fn.call_count == 2
         mock_sleep.assert_called_once()
 
-    @patch("transcriber._retry.time.sleep")
-    def test_all_retries_exhausted(self, mock_sleep: MagicMock) -> None:
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_all_retries_exhausted(self, mock_sleep: AsyncMock) -> None:
         exc = ValueError("persistent")
-        fn = MagicMock(side_effect=exc)
+        fn = AsyncMock(side_effect=exc)
 
         with pytest.raises(ValueError, match="persistent"):
-            retry_with_backoff(
+            await retry_with_backoff(
                 fn,
                 max_retries=3,
                 exceptions=(ValueError,),
@@ -154,14 +151,14 @@ class TestRetryWithBackoff:
         assert fn.call_count == 3
         assert mock_sleep.call_count == 2  # backoff before attempts 2 and 3
 
-    @patch("transcriber._retry.time.sleep")
-    def test_should_retry_false_stops_immediately(self, mock_sleep: MagicMock) -> None:
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_should_retry_false_stops_immediately(self, mock_sleep: AsyncMock) -> None:
         """Permanent errors are not retried when should_retry returns False."""
         exc = ValueError("permanent")
-        fn = MagicMock(side_effect=exc)
+        fn = AsyncMock(side_effect=exc)
 
         with pytest.raises(ValueError, match="permanent"):
-            retry_with_backoff(
+            await retry_with_backoff(
                 fn,
                 max_retries=5,
                 exceptions=(ValueError,),
@@ -172,10 +169,10 @@ class TestRetryWithBackoff:
         assert fn.call_count == 1
         mock_sleep.assert_not_called()
 
-    @patch("transcriber._retry.time.sleep")
-    def test_should_retry_true_allows_retries(self, mock_sleep: MagicMock) -> None:
-        fn = MagicMock(side_effect=[ValueError("t1"), ValueError("t2"), "ok"])
-        result = retry_with_backoff(
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_should_retry_true_allows_retries(self, mock_sleep: AsyncMock) -> None:
+        fn = AsyncMock(side_effect=[ValueError("t1"), ValueError("t2"), "ok"])
+        result = await retry_with_backoff(
             fn,
             max_retries=3,
             exceptions=(ValueError,),
@@ -186,12 +183,12 @@ class TestRetryWithBackoff:
         assert fn.call_count == 3
 
     @patch("transcriber._retry.random.uniform", return_value=1.0)
-    @patch("transcriber._retry.time.sleep")
-    def test_jitter_disabled_uses_exact_backoff(
-        self, mock_sleep: MagicMock, mock_uniform: MagicMock
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_jitter_disabled_uses_exact_backoff(
+        self, mock_sleep: AsyncMock, mock_uniform: MagicMock
     ) -> None:
-        fn = MagicMock(side_effect=[ValueError("x"), "ok"])
-        retry_with_backoff(
+        fn = AsyncMock(side_effect=[ValueError("x"), "ok"])
+        await retry_with_backoff(
             fn,
             max_retries=2,
             base_delay=2.0,
@@ -204,12 +201,12 @@ class TestRetryWithBackoff:
         mock_sleep.assert_called_once_with(2.0)
 
     @patch("transcriber._retry.random.uniform", return_value=1.5)
-    @patch("transcriber._retry.time.sleep")
-    def test_jitter_enabled_varies_delay(
-        self, mock_sleep: MagicMock, mock_uniform: MagicMock
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_jitter_enabled_varies_delay(
+        self, mock_sleep: AsyncMock, mock_uniform: MagicMock
     ) -> None:
-        fn = MagicMock(side_effect=[ValueError("x"), "ok"])
-        retry_with_backoff(
+        fn = AsyncMock(side_effect=[ValueError("x"), "ok"])
+        await retry_with_backoff(
             fn,
             max_retries=2,
             base_delay=2.0,
@@ -220,33 +217,32 @@ class TestRetryWithBackoff:
         # base_delay * 2^0 * 1.5 = 3.0
         mock_sleep.assert_called_once_with(3.0)
 
-    @patch("transcriber._retry.time.sleep")
-    def test_retry_after_header_respected(self, mock_sleep: MagicMock) -> None:
-        resp = MagicMock()
-        resp.status_code = 429
-        resp.headers = {"Retry-After": "10"}
-        exc = requests.exceptions.HTTPError(response=resp)
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_retry_after_header_respected(self, mock_sleep: AsyncMock) -> None:
+        request = httpx.Request("POST", "https://example.com")
+        response = httpx.Response(429, request=request, headers={"Retry-After": "10"})
+        exc = httpx.HTTPStatusError("error", request=request, response=response)
 
-        fn = MagicMock(side_effect=[exc, "ok"])
-        result = retry_with_backoff(
+        fn = AsyncMock(side_effect=[exc, "ok"])
+        result = await retry_with_backoff(
             fn,
             max_retries=2,
             base_delay=2.0,
-            exceptions=(requests.exceptions.RequestException,),
+            exceptions=(httpx.HTTPError,),
             jitter=False,
         )
         assert result == "ok"
         # max(base_delay=2.0, retry_after=10.0) = 10.0
         mock_sleep.assert_called_once_with(10.0)
 
-    @patch("transcriber._retry.time.sleep")
-    def test_final_failure_logged_at_error(
-        self, mock_sleep: MagicMock, caplog: pytest.LogCaptureFixture
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_final_failure_logged_at_error(
+        self, mock_sleep: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        fn = MagicMock(side_effect=ValueError("boom"))
+        fn = AsyncMock(side_effect=ValueError("boom"))
         with caplog.at_level("ERROR", logger="transcriber._retry"):
             with pytest.raises(ValueError, match="boom"):
-                retry_with_backoff(
+                await retry_with_backoff(
                     fn,
                     max_retries=2,
                     exceptions=(ValueError,),
@@ -255,14 +251,14 @@ class TestRetryWithBackoff:
 
         assert any("my_op failed after 2 attempts" in r.message for r in caplog.records)
 
-    @patch("transcriber._retry.time.sleep")
-    def test_non_retryable_error_logged_at_error(
-        self, mock_sleep: MagicMock, caplog: pytest.LogCaptureFixture
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_non_retryable_error_logged_at_error(
+        self, mock_sleep: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
-        fn = MagicMock(side_effect=ValueError("auth"))
+        fn = AsyncMock(side_effect=ValueError("auth"))
         with caplog.at_level("ERROR", logger="transcriber._retry"):
             with pytest.raises(ValueError, match="auth"):
-                retry_with_backoff(
+                await retry_with_backoff(
                     fn,
                     max_retries=3,
                     exceptions=(ValueError,),
@@ -272,22 +268,21 @@ class TestRetryWithBackoff:
 
         assert any("non-retryable error" in r.message for r in caplog.records)
 
-    @patch("transcriber._retry.time.sleep")
-    def test_http_status_logged_in_warning(
-        self, mock_sleep: MagicMock, caplog: pytest.LogCaptureFixture
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_http_status_logged_in_warning(
+        self, mock_sleep: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         """HTTP status code is included in the per-attempt warning log."""
-        resp = MagicMock()
-        resp.status_code = 503
-        resp.headers = {}
-        exc = requests.exceptions.HTTPError(response=resp)
+        request = httpx.Request("POST", "https://example.com")
+        response = httpx.Response(503, request=request)
+        exc = httpx.HTTPStatusError("error", request=request, response=response)
 
-        fn = MagicMock(side_effect=[exc, "ok"])
+        fn = AsyncMock(side_effect=[exc, "ok"])
         with caplog.at_level("WARNING", logger="transcriber._retry"):
-            retry_with_backoff(
+            await retry_with_backoff(
                 fn,
                 max_retries=2,
-                exceptions=(requests.exceptions.RequestException,),
+                exceptions=(httpx.HTTPError,),
                 operation_name="svc",
             )
 
@@ -300,110 +295,166 @@ class TestRetryWithBackoff:
 
 
 class TestRetryIntegration:
-    """Integration tests verifying retry in AzureTranscriptionBackend."""
+    """Integration tests: backend raises proper exceptions, retry_with_backoff retries them."""
 
-    @patch("transcriber._retry.time.sleep")
-    @patch("requests.post")
-    def test_transcription_retries_on_503(
-        self, mock_post: MagicMock, mock_sleep: MagicMock
-    ) -> None:
-        """503 errors are retried; success on 3rd attempt."""
-        from transcriber._transcription import AzureTranscriptionBackend
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_transcription_retries_on_503(self, mock_sleep: AsyncMock) -> None:
+        """503 errors from backend are retried via retry_with_backoff."""
+        import tempfile
 
-        # First two calls → 503, third → success
-        resp_fail = MagicMock()
-        resp_fail.status_code = 503
-        resp_fail.headers = {}
-        resp_fail.text = "Service Unavailable"
-        resp_fail.raise_for_status.side_effect = requests.exceptions.HTTPError(response=resp_fail)
+        from transcriber.backends import create_azure_transcription_backend
 
-        resp_ok = MagicMock()
-        resp_ok.status_code = 200
-        resp_ok.raise_for_status.return_value = None
-        resp_ok.json.return_value = {"text": "Hello world"}
+        request = httpx.Request("POST", "https://example.com")
+        resp_503 = httpx.Response(503, request=request, text="Service Unavailable")
+        exc_503 = httpx.HTTPStatusError("503", request=request, response=resp_503)
 
-        mock_post.side_effect = [resp_fail, resp_fail, resp_ok]
+        mock_response_ok = MagicMock()
+        mock_response_ok.status_code = 200
+        mock_response_ok.raise_for_status = MagicMock()
+        mock_response_ok.json.return_value = {"text": "Hello world"}
+
+        call_count = 0
+
+        async def fake_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise exc_503
+            return mock_response_ok
+
+        mock_client = AsyncMock()
+        mock_client.post = fake_post
+
+        backend = create_azure_transcription_backend(
+            api_key="key", api_url="https://example.com"
+        )
+        backend._client = mock_client
+        backend._owns_client = False
 
         with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as f:
             f.write(b"fake audio")
             f.flush()
-            backend = AzureTranscriptionBackend("key", "https://example.com", max_retries=3)
-            result = backend.transcribe(f.name)
+
+            result = await retry_with_backoff(
+                lambda: backend.transcribe(f.name),
+                max_retries=3,
+                exceptions=(TranscriptionError, httpx.HTTPError),
+                operation_name="transcription",
+                should_retry=is_transient_http_error,
+            )
 
         assert result == "Hello world"
-        assert mock_post.call_count == 3
+        assert call_count == 3
 
-    @patch("transcriber._retry.time.sleep")
-    @patch("requests.post")
-    def test_transcription_no_retry_on_401(
-        self, mock_post: MagicMock, mock_sleep: MagicMock
-    ) -> None:
-        """401 errors are not retried (permanent)."""
-        from transcriber._transcription import AzureTranscriptionBackend
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_transcription_no_retry_on_401(self, mock_sleep: AsyncMock) -> None:
+        """401 errors from backend are not retried (permanent)."""
+        import tempfile
 
-        resp = MagicMock()
-        resp.status_code = 401
-        resp.headers = {}
-        resp.text = "Unauthorized"
-        resp.raise_for_status.side_effect = requests.exceptions.HTTPError(response=resp)
+        from transcriber.backends import create_azure_transcription_backend
 
-        mock_post.return_value = resp
+        request = httpx.Request("POST", "https://example.com")
+        resp_401 = httpx.Response(401, request=request, text="Unauthorized")
+        exc_401 = httpx.HTTPStatusError("401", request=request, response=resp_401)
+
+        call_count = 0
+
+        async def fake_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise exc_401
+
+        mock_client = AsyncMock()
+        mock_client.post = fake_post
+
+        backend = create_azure_transcription_backend(
+            api_key="key", api_url="https://example.com"
+        )
+        backend._client = mock_client
+        backend._owns_client = False
 
         with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as f:
             f.write(b"fake audio")
             f.flush()
-            backend = AzureTranscriptionBackend("key", "https://example.com", max_retries=3)
             with pytest.raises(TranscriptionError) as exc_info:
-                backend.transcribe(f.name)
+                await backend.transcribe(f.name)
 
         assert exc_info.value.status_code == 401
-        assert mock_post.call_count == 1  # No retry
+        assert call_count == 1  # No retry — backend raises immediately
 
-    @patch("transcriber._retry.time.sleep")
-    @patch("requests.post")
-    def test_llm_retries_on_429(self, mock_post: MagicMock, mock_sleep: MagicMock) -> None:
-        """429 errors are retried with Retry-After support."""
-        from transcriber._llm import AzureLLMBackend
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_llm_retries_on_429(self, mock_sleep: AsyncMock) -> None:
+        """429 errors from LLM backend are retried."""
+        from transcriber.backends import create_azure_llm_backend
 
-        resp_fail = MagicMock()
-        resp_fail.status_code = 429
-        resp_fail.headers = {"Retry-After": "5"}
-        resp_fail.text = "Too Many Requests"
-        resp_fail.raise_for_status.side_effect = requests.exceptions.HTTPError(response=resp_fail)
+        request = httpx.Request("POST", "https://example.com")
+        resp_429 = httpx.Response(
+            429, request=request, headers={"Retry-After": "5"}, text="Too Many Requests"
+        )
+        exc_429 = httpx.HTTPStatusError("429", request=request, response=resp_429)
 
-        resp_ok = MagicMock()
-        resp_ok.status_code = 200
-        resp_ok.raise_for_status.return_value = None
-        resp_ok.json.return_value = {"choices": [{"message": {"content": "corrected text"}}]}
+        mock_response_ok = MagicMock()
+        mock_response_ok.status_code = 200
+        mock_response_ok.raise_for_status = MagicMock()
+        mock_response_ok.json.return_value = {
+            "choices": [{"message": {"content": "corrected text"}}]
+        }
 
-        mock_post.side_effect = [resp_fail, resp_ok]
+        call_count = 0
 
-        backend = AzureLLMBackend("key", "https://example.com")
-        result = backend.complete("test prompt", max_retries=3)
+        async def fake_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise exc_429
+            return mock_response_ok
+
+        mock_client = AsyncMock()
+        mock_client.post = fake_post
+
+        backend = create_azure_llm_backend(api_key="key", api_url="https://example.com")
+        backend._client = mock_client
+        backend._owns_client = False
+
+        result = await retry_with_backoff(
+            lambda: backend.complete("test prompt"),
+            max_retries=3,
+            exceptions=(LLMError, httpx.HTTPError),
+            operation_name="llm",
+            should_retry=is_transient_http_error,
+        )
 
         assert result == "corrected text"
-        assert mock_post.call_count == 2
+        assert call_count == 2
 
-    @patch("transcriber._retry.time.sleep")
-    @patch("requests.post")
-    def test_llm_no_retry_on_400(self, mock_post: MagicMock, mock_sleep: MagicMock) -> None:
-        """400 errors are not retried."""
-        from transcriber._llm import AzureLLMBackend
+    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    async def test_llm_no_retry_on_400(self, mock_sleep: AsyncMock) -> None:
+        """400 errors from LLM backend are not retried."""
+        from transcriber.backends import create_azure_llm_backend
 
-        resp = MagicMock()
-        resp.status_code = 400
-        resp.headers = {}
-        resp.text = "Bad Request"
-        resp.raise_for_status.side_effect = requests.exceptions.HTTPError(response=resp)
+        request = httpx.Request("POST", "https://example.com")
+        resp_400 = httpx.Response(400, request=request, text="Bad Request")
+        exc_400 = httpx.HTTPStatusError("400", request=request, response=resp_400)
 
-        mock_post.return_value = resp
+        call_count = 0
 
-        backend = AzureLLMBackend("key", "https://example.com")
+        async def fake_post(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise exc_400
+
+        mock_client = AsyncMock()
+        mock_client.post = fake_post
+
+        backend = create_azure_llm_backend(api_key="key", api_url="https://example.com")
+        backend._client = mock_client
+        backend._owns_client = False
+
         with pytest.raises(LLMError) as exc_info:
-            backend.complete("test prompt", max_retries=3)
+            await backend.complete("test prompt")
 
         assert exc_info.value.status_code == 400
-        assert mock_post.call_count == 1
+        assert call_count == 1
 
 
 # ---------------------------------------------------------------------------

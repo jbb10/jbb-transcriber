@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import tempfile
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -174,6 +175,8 @@ def _convert_to_m4a(file_path: str) -> str:
         return temp_path
 
     except (AudioFileError, ConversionError):
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
         raise
     except av.error.FFmpegError as e:  # type: ignore[attr-defined]
         if os.path.exists(temp_path):
@@ -302,10 +305,13 @@ def _split_audio_file(file_path: str, chunk_duration: int = 900) -> tuple[list[s
         return chunks, temp_dir
 
     except (AudioFileError, ConversionError):
+        shutil.rmtree(temp_dir, ignore_errors=True)
         raise
     except av.error.FFmpegError as e:  # type: ignore[attr-defined]
+        shutil.rmtree(temp_dir, ignore_errors=True)
         raise ConversionError(f"Could not split file: {e}", path=file_path) from e
     except Exception as e:
+        shutil.rmtree(temp_dir, ignore_errors=True)
         raise ConversionError(f"Unexpected error during split: {e}", path=file_path) from e
 
 
@@ -325,9 +331,5 @@ def split_audio(file_path: str, chunk_duration: int = 900) -> Generator[list[str
         yield chunks
     finally:
         logger.debug("Cleaning up temporary audio files")
-        for chunk in chunks:
-            if os.path.exists(chunk):
-                os.unlink(chunk)
-        if os.path.exists(temp_dir):
-            os.rmdir(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
         logger.debug("Temporary files cleaned up")

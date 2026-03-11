@@ -1,14 +1,14 @@
-"""Shared retry-with-backoff logic."""
+"""Shared async retry-with-backoff logic."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
-import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
-import requests
+import httpx
 
 from transcriber._exceptions import LLMError, TranscriptionError
 
@@ -29,11 +29,11 @@ def is_transient_http_error(exc: BaseException) -> bool:
 
     Classifies errors as follows:
 
-    - ``requests.exceptions.ConnectionError`` / ``Timeout`` → **retryable**
-    - ``requests.exceptions.HTTPError`` with status 429/500/502/503/504 → **retryable**
-    - ``requests.exceptions.HTTPError`` with status 400/401/403/404/… → **not retryable**
+    - ``httpx.TimeoutException`` / ``httpx.ConnectError`` → **retryable**
+    - ``httpx.HTTPStatusError`` with status 429/500/502/503/504 → **retryable**
+    - ``httpx.HTTPStatusError`` with status 400/401/403/404/… → **not retryable**
     - ``TranscriptionError`` / ``LLMError`` → delegates to ``.is_retryable``
-    - Any other ``RequestException`` → **retryable** (assume transient)
+    - Any other ``httpx.HTTPError`` → **retryable** (assume transient)
 
     Args:
         exc: The exception to classify.
@@ -44,20 +44,17 @@ def is_transient_http_error(exc: BaseException) -> bool:
     if isinstance(exc, (TranscriptionError, LLMError)):
         return exc.is_retryable
 
-    if isinstance(exc, requests.exceptions.Timeout):
+    if isinstance(exc, httpx.TimeoutException):
         return True
 
-    if isinstance(exc, requests.exceptions.ConnectionError):
+    if isinstance(exc, httpx.ConnectError):
         return True
 
-    if isinstance(exc, requests.exceptions.HTTPError):
-        resp = exc.response
-        if resp is not None:
-            return resp.status_code in _TRANSIENT_STATUS_CODES
-        return True  # No response at all → assume transient
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in _TRANSIENT_STATUS_CODES
 
-    # Other RequestException subclasses (ChunkedEncodingError, etc.)
-    if isinstance(exc, requests.exceptions.RequestException):
+    # Other httpx.HTTPError subclasses
+    if isinstance(exc, httpx.HTTPError):
         return True
 
     # Unknown exception type — don't retry by default
@@ -89,12 +86,12 @@ def _extract_retry_after(exc: BaseException) -> float | None:
 
 
 # ---------------------------------------------------------------------------
-# Core retry function
+# Core async retry function
 # ---------------------------------------------------------------------------
 
 
-def retry_with_backoff(
-    fn: Callable[[], _T],
+async def retry_with_backoff(
+    fn: Callable[[], Awaitable[_T]],
     *,
     max_retries: int = 3,
     base_delay: float = 2.0,
@@ -103,10 +100,10 @@ def retry_with_backoff(
     should_retry: Callable[[BaseException], bool] | None = None,
     jitter: bool = True,
 ) -> _T:
-    """Execute a callable with exponential backoff on failure.
+    """Execute an async callable with exponential backoff on failure.
 
     Args:
-        fn: Zero-argument callable to execute.
+        fn: Zero-argument async callable to execute.
         max_retries: Maximum number of attempts.
         base_delay: Base delay in seconds for the first retry.  Doubles on
             each subsequent attempt (``base_delay``, ``2 * base_delay``, …).
@@ -152,8 +149,8 @@ def retry_with_backoff(
                     max_retries,
                     backoff,
                 )
-                time.sleep(backoff)
-            return fn()
+                await asyncio.sleep(backoff)
+            return await fn()
         except exceptions as exc:
             last_exc = exc
 

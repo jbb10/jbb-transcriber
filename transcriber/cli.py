@@ -8,6 +8,7 @@ logic is accessed through the public ``transcriber`` package API.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import os
 import sys
@@ -16,6 +17,17 @@ from datetime import datetime
 from pathlib import Path
 
 import transcriber
+from transcriber._settings import (
+    AzureLLMSettings,
+    AzureTranscriptionSettings,
+    PipelineSettings,
+    WhisperSettings,
+)
+from transcriber.backends import (
+    AzureLLMBackend,
+    AzureTranscriptionBackend,
+    WhisperTranscriptionBackend,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +95,8 @@ def _setup_cli_logging() -> None:
 class ValidatedConfig:
     """Validated configuration for a CLI transcription job.
 
-    This is a CLI concern — library consumers use ``transcribe_file()``
-    and ``synthesise_text()`` directly and never see this type.
+    This is a CLI concern — library consumers use ``transcribe()``
+    and ``synthesise_transcript()`` directly and never see this type.
     """
 
     audio_file: Path
@@ -95,14 +107,16 @@ class ValidatedConfig:
     synthesise_only: bool
     parallel_workers: int
     chunk_duration: int
-    # Credential strings (may be empty in local / synthesise-only mode)
+    # Provider selection
+    provider: str
+    # Local mode
+    local_mode: bool
+    whisper_model: str
+    # Credentials (may be empty in local / synthesise-only mode)
     transcribe_api_key: str
     transcribe_url: str
     text_api_key: str | None
     text_url: str | None
-    # Local mode
-    local_mode: bool
-    whisper_model: str
 
 
 def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
@@ -116,6 +130,7 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
     chunk_duration: int = 900,
     local: bool,
     model: str,
+    provider: str = "azure",
 ) -> ValidatedConfig:
     """Validate CLI parameters and environment variables.
 
@@ -132,6 +147,7 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
         chunk_duration: Seconds per audio chunk.
         local: Whether ``--local`` was passed.
         model: Whisper model name.
+        provider: Backend provider name (default ``"azure"``).
 
     Returns:
         A fully validated ``ValidatedConfig``.
@@ -286,6 +302,7 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
         synthesise_only=synthesise_only,
         parallel_workers=parallel_workers,
         chunk_duration=chunk_duration,
+        provider=provider,
         transcribe_api_key=transcribe_api_key,  # type: ignore[arg-type]
         transcribe_url=transcribe_url,  # type: ignore[arg-type]
         text_api_key=text_api_key,
@@ -339,13 +356,25 @@ def _run(validated: ValidatedConfig) -> None:
     """Execute the transcription pipeline with a validated config.
 
     Builds backend instances from ``validated`` and delegates to the
-    library-level ``transcribe_file`` / ``synthesise_text`` functions so
-    that CLI and library share a single code path.
+    library-level async pipeline.
     """
+    asyncio.run(_run_async(validated))
+
+
+async def _run_async(validated: ValidatedConfig) -> None:
+    """Async implementation of the CLI pipeline."""
+    pipeline_settings = PipelineSettings(
+        chunk_duration=validated.chunk_duration,
+        parallel_workers=validated.parallel_workers,
+    )
+
     # Build LLM backend from validated credentials
-    llm_backend: transcriber.AzureLLMBackend | None = None
+    llm_backend: AzureLLMBackend | None = None
     if validated.text_api_key and validated.text_url:
-        llm_backend = transcriber.AzureLLMBackend(validated.text_api_key, validated.text_url)
+        llm_settings = AzureLLMSettings(
+            api_key=validated.text_api_key, api_url=validated.text_url
+        )
+        llm_backend = AzureLLMBackend(llm_settings)
 
     # --- synthesise-only mode ---
     if validated.synthesise_only:
@@ -353,45 +382,53 @@ def _run(validated: ValidatedConfig) -> None:
         transcript_text = validated.audio_file.read_text(encoding="utf-8")
 
         if not transcript_text.strip():
-            logger.error("Transcript file is empty")
-            sys.exit(1)
+            raise transcriber.ConfigurationError(["Transcript file is empty"])
 
         if llm_backend is None:
-            logger.error("LLM backend not configured")
-            sys.exit(1)
+            raise transcriber.ConfigurationError(["LLM backend required for synthesis"])
 
         logger.info("Generating synthesis document...")
-        synthesis = transcriber.synthesise_text(transcript_text, llm_backend=llm_backend)
-        output_stem = validated.audio_file.with_suffix("")
-        _write_output(synthesis, str(output_stem) + "_synthesis.md")
-        logger.info("Synthesis complete!")
+        try:
+            synthesis = await transcriber.synthesise_transcript(
+                transcript_text, llm_backend=llm_backend, settings=pipeline_settings
+            )
+            output_stem = validated.audio_file.with_suffix("")
+            _write_output(synthesis, str(output_stem) + "_synthesis.md")
+            logger.info("Synthesis complete!")
+        finally:
+            await llm_backend.aclose()
         return
 
     # --- Normal transcription ---
     transcription_backend: transcriber.TranscriptionBackend
     if validated.local_mode:
-        transcription_backend = transcriber.WhisperTranscriptionBackend(
-            model_name=validated.whisper_model,
-        )
+        whisper_settings = WhisperSettings(model_name=validated.whisper_model)
+        transcription_backend = WhisperTranscriptionBackend(settings=whisper_settings)
     else:
-        transcription_backend = transcriber.AzureTranscriptionBackend(
-            validated.transcribe_api_key, validated.transcribe_url
+        t_settings = AzureTranscriptionSettings(
+            api_key=validated.transcribe_api_key,
+            api_url=validated.transcribe_url,
         )
+        transcription_backend = AzureTranscriptionBackend(t_settings)
 
     try:
-        transcriber.transcribe_file(
+        await transcriber.transcribe(
             str(validated.audio_file),
             output=str(validated.output_file),
             glossary=str(validated.glossary) if validated.glossary else None,
             synthesise=validated.synthesise,
-            chunk_duration=validated.chunk_duration,
-            parallel_workers=validated.parallel_workers,
             transcription_backend=transcription_backend,
             llm_backend=llm_backend,
+            settings=pipeline_settings,
         )
     except transcriber.SynthesisError as e:
         logger.warning("%s", e)
         logger.warning("Transcript was saved successfully, but synthesis could not be generated.")
+    finally:
+        if isinstance(transcription_backend, AzureTranscriptionBackend):
+            await transcription_backend.aclose()
+        if llm_backend is not None:
+            await llm_backend.aclose()
 
     logger.info("Transcription complete!")
 
@@ -518,6 +555,13 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
         "large, large-v1, large-v2, large-v3, turbo",
     )
 
+    parser.add_argument(
+        "--provider",
+        default="azure",
+        choices=["azure"],
+        help="Backend provider for cloud transcription (default: azure)",
+    )
+
     args = parser.parse_args()
 
     try:
@@ -531,6 +575,7 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
             chunk_duration=args.chunk_duration,
             local=args.local,
             model=args.model,
+            provider=args.provider,
         )
         _run(validated)
     except transcriber.ConfigurationError as e:
