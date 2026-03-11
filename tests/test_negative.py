@@ -9,9 +9,8 @@ import tempfile
 import pytest
 
 from transcriber import ConfigurationError
-from transcriber._config import validate_cli_config
-from transcriber._transcription import format_whisper_output
-from transcriber.cli import positive_int
+from transcriber.backends._whisper import format_whisper_output
+from transcriber.cli import positive_int, validate_cli_config
 
 
 class TestPositiveIntType:
@@ -315,39 +314,39 @@ class TestValidationHappensBeforeWork:
 
 
 class TestMissingCredentials:
-    """Tests for missing Azure credentials via backend .from_env()."""
+    """Tests for missing Azure credentials via settings .from_env()."""
 
     def test_missing_transcription_api_key(self, clean_env):
         """Raises ConfigurationError when AZURE_TRANSCRIBE_API_KEY is missing."""
-        from transcriber import AzureTranscriptionBackend
+        from transcriber import AzureTranscriptionSettings
 
         with pytest.raises(ConfigurationError):
-            AzureTranscriptionBackend.from_env()
+            AzureTranscriptionSettings.from_env()
 
     def test_missing_transcription_api_url(self, clean_env, monkeypatch):
         """Raises ConfigurationError when AZURE_TRANSCRIBE_URL is missing."""
-        from transcriber import AzureTranscriptionBackend
+        from transcriber import AzureTranscriptionSettings
 
         monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
 
         with pytest.raises(ConfigurationError):
-            AzureTranscriptionBackend.from_env()
+            AzureTranscriptionSettings.from_env()
 
     def test_missing_text_api_key(self, clean_env):
         """Raises ConfigurationError when AZURE_TEXT_API_KEY is missing."""
-        from transcriber import AzureLLMBackend
+        from transcriber import AzureLLMSettings
 
         with pytest.raises(ConfigurationError):
-            AzureLLMBackend.from_env()
+            AzureLLMSettings.from_env()
 
     def test_missing_text_api_url(self, clean_env, monkeypatch):
         """Raises ConfigurationError when AZURE_TEXT_URL is missing."""
-        from transcriber import AzureLLMBackend
+        from transcriber import AzureLLMSettings
 
         monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-text-key")
 
         with pytest.raises(ConfigurationError):
-            AzureLLMBackend.from_env()
+            AzureLLMSettings.from_env()
 
 
 class TestFileValidation:
@@ -355,36 +354,47 @@ class TestFileValidation:
 
     def test_file_not_found(self):
         """Raises AudioFileError for nonexistent audio file."""
+        from unittest.mock import AsyncMock
+
         from transcriber import AudioFileError, transcribe_file
 
+        mock_backend = AsyncMock()
         with pytest.raises(AudioFileError):
-            transcribe_file("/nonexistent/path/to/audio.mp3")
+            transcribe_file("/nonexistent/path/to/audio.mp3", transcription_backend=mock_backend)
 
 
 class TestInvalidApiCredentials:
     """Tests for invalid API credentials (requires network)."""
 
-    def test_invalid_api_key_returns_error(self, short_audio_file):
+    async def test_invalid_api_key_returns_error(self, short_audio_file):
         """Invalid API key results in a TranscriptionError."""
-        from transcriber import AzureTranscriptionBackend, TranscriptionError
+        from transcriber import TranscriptionError
+        from transcriber.backends import create_azure_transcription_backend
 
-        backend = AzureTranscriptionBackend(
+        backend = create_azure_transcription_backend(
             api_key="invalid-api-key-12345",
             api_url="https://invalid-endpoint.openai.azure.com/openai/deployments/test/audio/transcriptions?api-version=2025-03-01-preview",
         )
-        with pytest.raises((TranscriptionError, Exception)):
-            backend.transcribe(short_audio_file)
+        try:
+            with pytest.raises((TranscriptionError, Exception)):
+                await backend.transcribe(short_audio_file)
+        finally:
+            await backend.aclose()
 
-    def test_invalid_url_returns_error(self, short_audio_file):
+    async def test_invalid_url_returns_error(self, short_audio_file):
         """Invalid API URL results in a TranscriptionError."""
-        from transcriber import AzureTranscriptionBackend, TranscriptionError
+        from transcriber import TranscriptionError
+        from transcriber.backends import create_azure_transcription_backend
 
-        backend = AzureTranscriptionBackend(
+        backend = create_azure_transcription_backend(
             api_key="test-key",
             api_url="https://this-endpoint-does-not-exist-12345.openai.azure.com/test",
         )
-        with pytest.raises((TranscriptionError, Exception)):
-            backend.transcribe(short_audio_file)
+        try:
+            with pytest.raises((TranscriptionError, Exception)):
+                await backend.transcribe(short_audio_file)
+        finally:
+            await backend.aclose()
 
 
 class TestEdgeCases:
@@ -423,7 +433,7 @@ class TestWhisperImport:
 
     def test_import_whisper_missing_raises(self, monkeypatch):
         """_import_whisper raises ConfigurationError when whisper not installed."""
-        from transcriber._transcription import _import_whisper
+        from transcriber.backends._whisper import _import_whisper
 
         original_import = builtins.__import__
 

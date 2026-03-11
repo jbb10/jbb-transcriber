@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import tempfile
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 API_SUPPORTED_FORMATS = {".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".wav", ".webm"}
 
 # Formats that don't need conversion (mp4/webm always converted to strip video)
-API_NO_CONVERSION = {".mp3", ".mpeg", ".mpga", ".m4a", ".wav"}
+API_NO_CONVERSION: set[str] = {".mp3", ".mpeg", ".mpga", ".m4a", ".wav"}
 
 # Additional audio formats we can convert
 AUDIO_CONVERTIBLE = {".aac", ".ogg", ".flac", ".wma", ".opus", ".aiff", ".aif"}
@@ -106,7 +107,7 @@ def get_audio_duration(file_path: str) -> float | None:
         return None
 
 
-def _convert_to_m4a(file_path: str) -> str:
+def convert_to_m4a(file_path: str) -> str:
     """Convert an audio/video file to M4A (AAC, mono, 16 kHz).
 
     Args:
@@ -174,6 +175,8 @@ def _convert_to_m4a(file_path: str) -> str:
         return temp_path
 
     except (AudioFileError, ConversionError):
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
         raise
     except av.error.FFmpegError as e:  # type: ignore[attr-defined]
         if os.path.exists(temp_path):
@@ -204,7 +207,7 @@ def converted_audio(file_path: str) -> Generator[str, None, None]:
         yield file_path
         return
 
-    converted_path = _convert_to_m4a(file_path)
+    converted_path = convert_to_m4a(file_path)
     try:
         yield converted_path
     finally:
@@ -213,7 +216,7 @@ def converted_audio(file_path: str) -> Generator[str, None, None]:
             os.unlink(converted_path)
 
 
-def _split_audio_file(file_path: str, chunk_duration: int = 900) -> tuple[list[str], str]:
+def split_audio_file(file_path: str, chunk_duration: int = 900) -> tuple[list[str], str]:
     """Split audio into chunks of the given duration.
 
     Args:
@@ -302,10 +305,13 @@ def _split_audio_file(file_path: str, chunk_duration: int = 900) -> tuple[list[s
         return chunks, temp_dir
 
     except (AudioFileError, ConversionError):
+        shutil.rmtree(temp_dir, ignore_errors=True)
         raise
     except av.error.FFmpegError as e:  # type: ignore[attr-defined]
+        shutil.rmtree(temp_dir, ignore_errors=True)
         raise ConversionError(f"Could not split file: {e}", path=file_path) from e
     except Exception as e:
+        shutil.rmtree(temp_dir, ignore_errors=True)
         raise ConversionError(f"Unexpected error during split: {e}", path=file_path) from e
 
 
@@ -320,14 +326,10 @@ def split_audio(file_path: str, chunk_duration: int = 900) -> Generator[list[str
     Yields:
         List of paths to chunk files.
     """
-    chunks, temp_dir = _split_audio_file(file_path, chunk_duration)
+    chunks, temp_dir = split_audio_file(file_path, chunk_duration)
     try:
         yield chunks
     finally:
         logger.debug("Cleaning up temporary audio files")
-        for chunk in chunks:
-            if os.path.exists(chunk):
-                os.unlink(chunk)
-        if os.path.exists(temp_dir):
-            os.rmdir(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
         logger.debug("Temporary files cleaned up")

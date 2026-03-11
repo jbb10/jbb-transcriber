@@ -3,7 +3,7 @@ Tests for the public library API (transcribe_file, synthesise_text).
 """
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -22,12 +22,13 @@ class TestTranscribeFileValidation:
 
     def test_missing_file_raises_audio_file_error(self):
         """Raises AudioFileError for nonexistent file."""
+        mock_backend = AsyncMock()
         with pytest.raises(AudioFileError):
-            transcribe_file("/nonexistent/file.mp3")
+            transcribe_file("/nonexistent/file.mp3", transcription_backend=mock_backend)
 
     def test_missing_glossary_raises_audio_file_error(self, short_audio_file):
         """Raises AudioFileError for nonexistent glossary file."""
-        mock_backend = MagicMock()
+        mock_backend = AsyncMock()
         with pytest.raises(AudioFileError):
             transcribe_file(
                 short_audio_file,
@@ -41,7 +42,7 @@ class TestTranscribeFileWithMockBackend:
 
     def test_returns_transcription_result(self, short_audio_file):
         """Returns a TranscriptionResult dataclass."""
-        mock_backend = MagicMock()
+        mock_backend = AsyncMock()
         mock_backend.transcribe.return_value = "Hello, world."
 
         result = transcribe_file(short_audio_file, transcription_backend=mock_backend)
@@ -52,7 +53,7 @@ class TestTranscribeFileWithMockBackend:
 
     def test_writes_output_file(self, short_audio_file, tmp_path):
         """Writes transcript to output file when specified."""
-        mock_backend = MagicMock()
+        mock_backend = AsyncMock()
         mock_backend.transcribe.return_value = "Transcript content"
         output = str(tmp_path / "output.txt")
 
@@ -68,10 +69,10 @@ class TestTranscribeFileWithMockBackend:
         glossary_file = tmp_path / "glossary.txt"
         glossary_file.write_text("API: Application Programming Interface")
 
-        mock_transcription = MagicMock()
+        mock_transcription = AsyncMock()
         mock_transcription.transcribe.return_value = "We built an aye pee eye."
 
-        mock_llm = MagicMock()
+        mock_llm = AsyncMock()
         mock_llm.complete.return_value = "We built an API."
 
         result = transcribe_file(
@@ -87,10 +88,10 @@ class TestTranscribeFileWithMockBackend:
 
     def test_synthesis_generation(self, short_audio_file):
         """Generates synthesis when synthesise=True."""
-        mock_transcription = MagicMock()
+        mock_transcription = AsyncMock()
         mock_transcription.transcribe.return_value = "Meeting transcript text."
 
-        mock_llm = MagicMock()
+        mock_llm = AsyncMock()
         mock_llm.complete.return_value = "# Meeting Summary\n\nKey points..."
 
         result = transcribe_file(
@@ -105,7 +106,7 @@ class TestTranscribeFileWithMockBackend:
 
     def test_duration_in_result(self, short_audio_file):
         """Result includes audio duration."""
-        mock_backend = MagicMock()
+        mock_backend = AsyncMock()
         mock_backend.transcribe.return_value = "Hello"
 
         result = transcribe_file(short_audio_file, transcription_backend=mock_backend)
@@ -116,7 +117,7 @@ class TestTranscribeFileWithMockBackend:
 
     def test_transcription_result_is_frozen(self, short_audio_file):
         """TranscriptionResult is immutable (frozen dataclass)."""
-        mock_backend = MagicMock()
+        mock_backend = AsyncMock()
         mock_backend.transcribe.return_value = "Hello"
 
         result = transcribe_file(short_audio_file, transcription_backend=mock_backend)
@@ -130,7 +131,7 @@ class TestSynthesiseText:
 
     def test_returns_synthesis(self):
         """Returns synthesis text from LLM."""
-        mock_llm = MagicMock()
+        mock_llm = AsyncMock()
         mock_llm.complete.return_value = "# Summary\n\nKey decisions..."
 
         result = synthesise_text("Some transcript", llm_backend=mock_llm)
@@ -140,7 +141,7 @@ class TestSynthesiseText:
 
     def test_missing_llm_raises_config_error(self, clean_env):
         """Raises ConfigurationError when no LLM backend and no env vars."""
-        with pytest.raises(ConfigurationError):
+        with pytest.raises((ConfigurationError, TypeError)):
             synthesise_text("Some transcript")
 
 

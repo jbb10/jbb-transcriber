@@ -101,3 +101,11 @@ class SynthesisError(TranscriberError):
         self.status_code = status_code
         self.response_body = response_body
         super().__init__(message)
+
+
+class PromptError(TranscriberError):
+    """Error loading or rendering a prompt template."""
+
+
+class SecurityError(TranscriberError):
+    """Security constraint violation (e.g. non-HTTPS URL)."""
