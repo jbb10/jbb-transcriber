@@ -41,6 +41,7 @@ class AzureTranscriptionBackend:
         self._client = client or openai.AsyncOpenAI(
             base_url=settings.api_url,
             api_key=settings.api_key,
+            timeout=settings.request_timeout,
         )
         self._owns_client = client is None
 
@@ -163,6 +164,7 @@ class AzureLLMBackend:
         self._client = client or openai.AsyncOpenAI(
             base_url=settings.api_url,
             api_key=settings.api_key,
+            timeout=settings.request_timeout,
         )
         self._owns_client = client is None
 

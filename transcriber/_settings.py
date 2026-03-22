@@ -9,10 +9,17 @@ Environment variable resolution
 Both backends share a single LiteLLM proxy endpoint.  Credentials are
 resolved with per-app override → org-wide default fallback:
 
-* ``TRANSCRIBER_API_KEY``  →  ``OPENAI_API_KEY``   (API key)
-* ``TRANSCRIBER_BASE_URL`` →  ``OPENAI_BASE_URL``   (proxy base URL, e.g. ``/v1``)
-* ``TRANSCRIBER_MODEL``                              (transcription model name)
-* ``TRANSCRIBER_TEXT_MODEL``                         (LLM/chat model name)
+* ``TRANSCRIBER_API_KEY``      →  ``OPENAI_API_KEY``   (API key)
+* ``TRANSCRIBER_BASE_URL``     →  ``OPENAI_BASE_URL``   (proxy base URL, e.g. ``/v1``)
+* ``TRANSCRIBER_MODEL``                                 (transcription model name)
+* ``TRANSCRIBER_TEXT_MODEL``                            (LLM/chat model name)
+* ``TRANSCRIBER_REQUEST_TIMEOUT``                       (HTTP timeout in seconds, default 600)
+
+Pipeline tuning (optional, override defaults without code changes):
+
+* ``TRANSCRIBER_CHUNK_DURATION``   seconds per audio chunk (default 180 = 3 min)
+* ``TRANSCRIBER_MAX_WORKERS``      max parallel chunk transcriptions (default 8)
+* ``TRANSCRIBER_MAX_RETRIES``      max retry attempts per chunk (default 3)
 """
 
 from __future__ import annotations
@@ -82,7 +89,10 @@ class AzureTranscriptionSettings:
         assert api_url is not None  # noqa: S101 — guarded above
         validate_https_url(api_url, name="TRANSCRIBER_BASE_URL")
 
-        return cls(api_key=api_key, api_url=api_url, model=model)  # type: ignore[arg-type]
+        request_timeout_raw = os.getenv("TRANSCRIBER_REQUEST_TIMEOUT")
+        request_timeout = int(request_timeout_raw) if request_timeout_raw else 600
+
+        return cls(api_key=api_key, api_url=api_url, model=model, request_timeout=request_timeout)  # type: ignore[arg-type]
 
 
 @dataclass(frozen=True)
@@ -148,10 +158,37 @@ class WhisperSettings:
 class PipelineSettings:
     """Cross-cutting pipeline configuration."""
 
-    chunk_duration: int = 900
-    parallel_workers: int = 15
-    max_duration_before_split: int = 900
+    chunk_duration: int = 180
+    parallel_workers: int = 8
+    max_duration_before_split: int = 180
     max_retries: int = 3
     base_delay: float = 2.0
     max_glossary_size: int = 500_000
     fail_on_correction_error: bool = False
+
+    @classmethod
+    def from_env(cls) -> PipelineSettings:
+        """Create settings from environment variables, falling back to defaults.
+
+        Reads:
+          * ``TRANSCRIBER_CHUNK_DURATION``  — seconds per audio chunk (default 300)
+          * ``TRANSCRIBER_MAX_WORKERS``     — parallel chunk workers (default 2)
+          * ``TRANSCRIBER_MAX_RETRIES``     — retry attempts per chunk (default 3)
+
+        Raises:
+            ValueError: If an env var is set but cannot be parsed as an integer.
+        """
+        chunk_duration_raw = os.getenv("TRANSCRIBER_CHUNK_DURATION")
+        max_workers_raw = os.getenv("TRANSCRIBER_MAX_WORKERS")
+        max_retries_raw = os.getenv("TRANSCRIBER_MAX_RETRIES")
+
+        chunk_duration = int(chunk_duration_raw) if chunk_duration_raw else 180
+        parallel_workers = int(max_workers_raw) if max_workers_raw else 8
+        max_retries = int(max_retries_raw) if max_retries_raw else 3
+
+        return cls(
+            chunk_duration=chunk_duration,
+            max_duration_before_split=chunk_duration,
+            parallel_workers=parallel_workers,
+            max_retries=max_retries,
+        )

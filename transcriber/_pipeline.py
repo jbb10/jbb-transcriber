@@ -72,7 +72,7 @@ async def transcribe(
         SynthesisError: Synthesis generation failure.
     """
     if settings is None:
-        settings = PipelineSettings()
+        settings = PipelineSettings.from_env()
 
     audio_path = Path(path)
     if not audio_path.exists():

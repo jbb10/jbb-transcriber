@@ -127,7 +127,7 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
     synthesise: bool,
     synthesise_only: bool,
     parallel_workers: int,
-    chunk_duration: int = 900,
+    chunk_duration: int = 180,
     local: bool,
     model: str,
     provider: str = "azure",
@@ -541,16 +541,16 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
         "--parallel-workers",
         "-p",
         type=positive_int,
-        default=15,
-        help="Maximum number of parallel workers for processing chunks (default: 15, max: 100)",
+        default=8,
+        help="Maximum number of parallel workers for processing chunks (default: 8, max: 100)",
     )
 
     parser.add_argument(
         "--chunk-duration",
         type=positive_int,
-        default=900,
+        default=180,
         help="Duration in seconds for each audio chunk when splitting long files "
-        "(default: 900 = 15 min, min: 60, max: 3600)",
+        "(default: 180 = 3 min, min: 60, max: 3600)",
     )
 
     parser.add_argument(
