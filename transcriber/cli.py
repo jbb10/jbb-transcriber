@@ -112,11 +112,11 @@ class ValidatedConfig:
     # Local mode
     local_mode: bool
     whisper_model: str
-    # Credentials (may be empty in local / synthesise-only mode)
-    transcribe_api_key: str
-    transcribe_url: str
-    text_api_key: str | None
-    text_url: str | None
+    # Shared LiteLLM proxy credentials (empty in local mode)
+    api_key: str
+    base_url: str
+    transcribe_model: str
+    text_model: str | None
 
 
 def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
@@ -222,33 +222,53 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
             errors.append(f"Glossary path is not a file: {glossary_path}")
 
     # --- Environment variables ---
-    transcribe_api_key = os.getenv("AZURE_TRANSCRIBE_API_KEY")
-    transcribe_url = os.getenv("AZURE_TRANSCRIBE_URL")
-    text_api_key: str | None = None
-    text_url: str | None = None
+    # Credentials: TRANSCRIBER_* overrides OPENAI_* (per-app spend tracking)
+    from transcriber._settings import resolve_api_key, resolve_base_url
+
+    api_key: str = ""
+    base_url: str = ""
+    transcribe_model: str = ""
+    text_model: str | None = None
+
+    require_text_features = bool(glossary) or synthesise or synthesise_only
+
+    # API credentials are needed when:
+    #   - running cloud transcription (not local), OR
+    #   - using any text feature (glossary/synthesise) even in local mode
+    need_api_credentials = (not local) or require_text_features
+    if need_api_credentials:
+        _api_key = resolve_api_key()
+        _base_url = resolve_base_url()
+
+        if not _api_key:
+            errors.append(
+                "Neither TRANSCRIBER_API_KEY nor OPENAI_API_KEY is set. "
+                'Add to ~/.zshrc: export TRANSCRIBER_API_KEY="your-litellm-key"'
+            )
+        else:
+            api_key = _api_key
+
+        if not _base_url:
+            errors.append(
+                "Neither TRANSCRIBER_BASE_URL nor OPENAI_BASE_URL is set. "
+                'Add to ~/.zshrc: export TRANSCRIBER_BASE_URL="https://your-proxy.example.com/v1"'
+            )
+        else:
+            base_url = _base_url
 
     if not local and not synthesise_only:
-        if not transcribe_api_key:
+        _transcribe_model = os.getenv("TRANSCRIBER_MODEL")
+        if not _transcribe_model:
             errors.append(
-                "AZURE_TRANSCRIBE_API_KEY environment variable is not set. "
-                'Add to ~/.zshrc: export AZURE_TRANSCRIBE_API_KEY="your-api-key"'
+                "TRANSCRIBER_MODEL environment variable is not set. "
+                'Add to ~/.zshrc: export TRANSCRIBER_MODEL="your-transcription-model-name"'
             )
-        if not transcribe_url:
-            errors.append(
-                "AZURE_TRANSCRIBE_URL environment variable is not set. "
-                'Add to ~/.zshrc: export AZURE_TRANSCRIBE_URL="your-endpoint-url"'
-            )
-    else:
-        if not transcribe_api_key:
-            transcribe_api_key = ""
-        if not transcribe_url:
-            transcribe_url = ""
+        else:
+            transcribe_model = _transcribe_model
+    elif not local:
+        transcribe_model = os.getenv("TRANSCRIBER_MODEL", "")
 
-    require_text_api = bool(glossary) or synthesise or synthesise_only
-    if require_text_api:
-        text_api_key = os.getenv("AZURE_TEXT_API_KEY")
-        text_url = os.getenv("AZURE_TEXT_URL")
-
+    if require_text_features:
         if glossary:
             feature = "--glossary"
         elif synthesise_only:
@@ -256,16 +276,14 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
         else:
             feature = "--synthesise"
 
-        if not text_api_key:
+        _text_model = os.getenv("TRANSCRIBER_TEXT_MODEL")
+        if not _text_model:
             errors.append(
-                f"AZURE_TEXT_API_KEY environment variable is not set (required for {feature}). "
-                'Add to ~/.zshrc: export AZURE_TEXT_API_KEY="your-api-key"'
+                f"TRANSCRIBER_TEXT_MODEL environment variable is not set (required for {feature}). "
+                'Add to ~/.zshrc: export TRANSCRIBER_TEXT_MODEL="your-text-model-name"'
             )
-        if not text_url:
-            errors.append(
-                f"AZURE_TEXT_URL environment variable is not set (required for {feature}). "
-                'Add to ~/.zshrc: export AZURE_TEXT_URL="your-endpoint-url"'
-            )
+        else:
+            text_model = _text_model
 
     # --- Whisper availability ---
     if local:
@@ -303,12 +321,12 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
         parallel_workers=parallel_workers,
         chunk_duration=chunk_duration,
         provider=provider,
-        transcribe_api_key=transcribe_api_key,  # type: ignore[arg-type]
-        transcribe_url=transcribe_url,  # type: ignore[arg-type]
-        text_api_key=text_api_key,
-        text_url=text_url,
+        api_key=api_key,
+        base_url=base_url,
         local_mode=local,
         whisper_model=model,
+        transcribe_model=transcribe_model,
+        text_model=text_model,
     )
 
 
@@ -370,8 +388,12 @@ async def _run_async(validated: ValidatedConfig) -> None:
 
     # Build LLM backend from validated credentials
     llm_backend: AzureLLMBackend | None = None
-    if validated.text_api_key and validated.text_url:
-        llm_settings = AzureLLMSettings(api_key=validated.text_api_key, api_url=validated.text_url)
+    if validated.text_model and validated.api_key and validated.base_url:
+        llm_settings = AzureLLMSettings(
+            api_key=validated.api_key,
+            api_url=validated.base_url,
+            model=validated.text_model,
+        )
         llm_backend = AzureLLMBackend(llm_settings)
 
     # --- synthesise-only mode ---
@@ -404,12 +426,19 @@ async def _run_async(validated: ValidatedConfig) -> None:
         transcription_backend = WhisperTranscriptionBackend(settings=whisper_settings)
     else:
         t_settings = AzureTranscriptionSettings(
-            api_key=validated.transcribe_api_key,
-            api_url=validated.transcribe_url,
+            api_key=validated.api_key,
+            api_url=validated.base_url,
+            model=validated.transcribe_model,
         )
         transcription_backend = AzureTranscriptionBackend(t_settings)
 
     try:
+        completed: list[int] = []
+
+        def _on_chunk_done(chunk_idx: int, total: int) -> None:
+            completed.append(chunk_idx)
+            logger.info("Chunk %d/%d complete", len(completed), total)
+
         await transcriber.transcribe(
             str(validated.audio_file),
             output=str(validated.output_file),
@@ -418,6 +447,7 @@ async def _run_async(validated: ValidatedConfig) -> None:
             transcription_backend=transcription_backend,
             llm_backend=llm_backend,
             settings=pipeline_settings,
+            on_chunk_complete=_on_chunk_done,
         )
     except transcriber.SynthesisError as e:
         logger.warning("%s", e)
@@ -445,11 +475,12 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Environment Variables:
-  AZURE_TRANSCRIBE_API_KEY    Your Azure OpenAI API key for transcription
-  AZURE_TRANSCRIBE_URL        Your Azure OpenAI endpoint URL for transcription
-  AZURE_TEXT_API_KEY          Your Azure OpenAI API key for text LLM
-                              (required with --glossary, --synthesise, or --synthesise-only)
-  AZURE_TEXT_URL              Your Azure OpenAI endpoint URL for text LLM
+  TRANSCRIBER_API_KEY         LiteLLM virtual key (overrides OPENAI_API_KEY)
+  OPENAI_API_KEY              Fallback API key if TRANSCRIBER_API_KEY is not set
+  TRANSCRIBER_BASE_URL        LiteLLM proxy base URL (overrides OPENAI_BASE_URL)
+  OPENAI_BASE_URL             Fallback base URL if TRANSCRIBER_BASE_URL is not set
+  TRANSCRIBER_MODEL           Model name for transcription (e.g., gpt-4o-transcribe)
+  TRANSCRIBER_TEXT_MODEL      Model name for text LLM
                               (required with --glossary, --synthesise, or --synthesise-only)
 
 Example:

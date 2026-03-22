@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import openai
 import pytest
 
 from transcriber._exceptions import LLMError, TranscriptionError
@@ -297,6 +298,40 @@ class TestRetryWithBackoff:
 class TestRetryIntegration:
     """Integration tests: backend raises proper exceptions, retry_with_backoff retries them."""
 
+    def _make_openai_status_error(self, status_code: int, text: str) -> openai.APIStatusError:
+        """Build an openai.APIStatusError for the given status code."""
+        import openai
+
+        mock_response = MagicMock()
+        mock_response.status_code = status_code
+        mock_response.text = text
+        mock_response.headers = {}
+        mock_response.request = MagicMock()
+        exc_classes = {
+            401: openai.AuthenticationError,
+            400: openai.BadRequestError,
+            429: openai.RateLimitError,
+            503: openai.InternalServerError,
+        }
+        cls = exc_classes.get(status_code, openai.APIStatusError)
+        return cls(str(status_code), response=mock_response, body=None)
+
+    def _make_mock_transcription_client(self, side_effects: list) -> MagicMock:
+        """A mock openai client whose audio.transcriptions.create yields side_effects."""
+        client = MagicMock()
+        client.audio = MagicMock()
+        client.audio.transcriptions = MagicMock()
+        client.audio.transcriptions.create = AsyncMock(side_effect=side_effects)
+        return client
+
+    def _make_mock_llm_client(self, side_effects: list) -> MagicMock:
+        """A mock openai client whose chat.completions.create yields side_effects."""
+        client = MagicMock()
+        client.chat = MagicMock()
+        client.chat.completions = MagicMock()
+        client.chat.completions.create = AsyncMock(side_effect=side_effects)
+        return client
+
     @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_transcription_retries_on_503(self, mock_sleep: AsyncMock) -> None:
         """503 errors from backend are retried via retry_with_backoff."""
@@ -304,28 +339,16 @@ class TestRetryIntegration:
 
         from transcriber.backends import create_azure_transcription_backend
 
-        request = httpx.Request("POST", "https://example.com")
-        resp_503 = httpx.Response(503, request=request, text="Service Unavailable")
-        exc_503 = httpx.HTTPStatusError("503", request=request, response=resp_503)
+        exc_503 = self._make_openai_status_error(503, "Service Unavailable")
 
-        mock_response_ok = MagicMock()
-        mock_response_ok.status_code = 200
-        mock_response_ok.raise_for_status = MagicMock()
-        mock_response_ok.json.return_value = {"text": "Hello world"}
+        mock_result = MagicMock()
+        mock_result.model_dump.return_value = {"text": "Hello world"}
 
-        call_count = 0
+        mock_client = self._make_mock_transcription_client([exc_503, exc_503, mock_result])
 
-        async def fake_post(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count <= 2:
-                raise exc_503
-            return mock_response_ok
-
-        mock_client = AsyncMock()
-        mock_client.post = fake_post
-
-        backend = create_azure_transcription_backend(api_key="key", api_url="https://example.com")
+        backend = create_azure_transcription_backend(
+            api_key="key", api_url="https://example.com", model="test-model"
+        )
         backend._client = mock_client
         backend._owns_client = False
 
@@ -342,7 +365,7 @@ class TestRetryIntegration:
             )
 
         assert result == "Hello world"
-        assert call_count == 3
+        assert mock_client.audio.transcriptions.create.await_count == 3
 
     @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_transcription_no_retry_on_401(self, mock_sleep: AsyncMock) -> None:
@@ -351,21 +374,13 @@ class TestRetryIntegration:
 
         from transcriber.backends import create_azure_transcription_backend
 
-        request = httpx.Request("POST", "https://example.com")
-        resp_401 = httpx.Response(401, request=request, text="Unauthorized")
-        exc_401 = httpx.HTTPStatusError("401", request=request, response=resp_401)
+        exc_401 = self._make_openai_status_error(401, "Unauthorized")
 
-        call_count = 0
+        mock_client = self._make_mock_transcription_client([exc_401])
 
-        async def fake_post(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            raise exc_401
-
-        mock_client = AsyncMock()
-        mock_client.post = fake_post
-
-        backend = create_azure_transcription_backend(api_key="key", api_url="https://example.com")
+        backend = create_azure_transcription_backend(
+            api_key="key", api_url="https://example.com", model="test-model"
+        )
         backend._client = mock_client
         backend._owns_client = False
 
@@ -376,39 +391,27 @@ class TestRetryIntegration:
                 await backend.transcribe(f.name)
 
         assert exc_info.value.status_code == 401
-        assert call_count == 1  # No retry — backend raises immediately
+        assert mock_client.audio.transcriptions.create.await_count == 1
 
     @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_llm_retries_on_429(self, mock_sleep: AsyncMock) -> None:
         """429 errors from LLM backend are retried."""
         from transcriber.backends import create_azure_llm_backend
 
-        request = httpx.Request("POST", "https://example.com")
-        resp_429 = httpx.Response(
-            429, request=request, headers={"Retry-After": "5"}, text="Too Many Requests"
+        exc_429 = self._make_openai_status_error(429, "Too Many Requests")
+
+        mock_message = MagicMock()
+        mock_message.content = "corrected text"
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+        mock_result = MagicMock()
+        mock_result.choices = [mock_choice]
+
+        mock_client = self._make_mock_llm_client([exc_429, mock_result])
+
+        backend = create_azure_llm_backend(
+            api_key="key", api_url="https://example.com", model="test-model"
         )
-        exc_429 = httpx.HTTPStatusError("429", request=request, response=resp_429)
-
-        mock_response_ok = MagicMock()
-        mock_response_ok.status_code = 200
-        mock_response_ok.raise_for_status = MagicMock()
-        mock_response_ok.json.return_value = {
-            "choices": [{"message": {"content": "corrected text"}}]
-        }
-
-        call_count = 0
-
-        async def fake_post(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise exc_429
-            return mock_response_ok
-
-        mock_client = AsyncMock()
-        mock_client.post = fake_post
-
-        backend = create_azure_llm_backend(api_key="key", api_url="https://example.com")
         backend._client = mock_client
         backend._owns_client = False
 
@@ -421,28 +424,20 @@ class TestRetryIntegration:
         )
 
         assert result == "corrected text"
-        assert call_count == 2
+        assert mock_client.chat.completions.create.await_count == 2
 
     @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_llm_no_retry_on_400(self, mock_sleep: AsyncMock) -> None:
         """400 errors from LLM backend are not retried."""
         from transcriber.backends import create_azure_llm_backend
 
-        request = httpx.Request("POST", "https://example.com")
-        resp_400 = httpx.Response(400, request=request, text="Bad Request")
-        exc_400 = httpx.HTTPStatusError("400", request=request, response=resp_400)
+        exc_400 = self._make_openai_status_error(400, "Bad Request")
 
-        call_count = 0
+        mock_client = self._make_mock_llm_client([exc_400])
 
-        async def fake_post(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            raise exc_400
-
-        mock_client = AsyncMock()
-        mock_client.post = fake_post
-
-        backend = create_azure_llm_backend(api_key="key", api_url="https://example.com")
+        backend = create_azure_llm_backend(
+            api_key="key", api_url="https://example.com", model="test-model"
+        )
         backend._client = mock_client
         backend._owns_client = False
 
@@ -450,7 +445,7 @@ class TestRetryIntegration:
             await backend.complete("test prompt")
 
         assert exc_info.value.status_code == 400
-        assert call_count == 1
+        assert mock_client.chat.completions.create.await_count == 1
 
 
 # ---------------------------------------------------------------------------

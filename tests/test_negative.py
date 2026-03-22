@@ -71,8 +71,9 @@ class TestValidateCliConfig:
 
     def test_parallel_workers_too_high(self, valid_kwargs, monkeypatch):
         """Rejects parallel_workers > 100."""
-        monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
         valid_kwargs["parallel_workers"] = 200
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -82,8 +83,9 @@ class TestValidateCliConfig:
 
     def test_output_dir_not_exists(self, valid_kwargs, monkeypatch):
         """Rejects output path in nonexistent directory."""
-        monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
         valid_kwargs["output_file"] = "/nonexistent/directory/output.txt"
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -93,8 +95,9 @@ class TestValidateCliConfig:
 
     def test_audio_file_not_found(self, valid_kwargs, monkeypatch):
         """Rejects nonexistent audio file."""
-        monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
         valid_kwargs["audio_file"] = "/nonexistent/audio.mp3"
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -104,10 +107,10 @@ class TestValidateCliConfig:
 
     def test_glossary_file_not_found(self, valid_kwargs, monkeypatch):
         """Rejects nonexistent glossary file."""
-        monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
-        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-text-key")
-        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
+        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-text-model")
         valid_kwargs["glossary"] = "/nonexistent/glossary.txt"
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -117,8 +120,10 @@ class TestValidateCliConfig:
 
     def test_multiple_errors_shown(self, valid_kwargs, monkeypatch):
         """All validation errors are reported at once."""
-        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
+        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("TRANSCRIBER_BASE_URL", raising=False)
+        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
         valid_kwargs["audio_file"] = "/nonexistent/audio.mp3"
         valid_kwargs["parallel_workers"] = 200
 
@@ -128,42 +133,42 @@ class TestValidateCliConfig:
         errors_text = " ".join(exc_info.value.errors)
         assert "cannot exceed 100" in errors_text
         assert "Audio file not found" in errors_text
-        assert "AZURE_TRANSCRIBE_API_KEY" in errors_text
+        assert "OPENAI_API_KEY" in errors_text
 
-    def test_synthesise_requires_text_api(self, valid_kwargs, monkeypatch):
-        """--synthesise requires text API credentials."""
-        monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
-        monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
+    def test_synthesise_requires_text_model(self, valid_kwargs, monkeypatch):
+        """--synthesise requires TRANSCRIBER_TEXT_MODEL."""
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
+        monkeypatch.delenv("TRANSCRIBER_TEXT_MODEL", raising=False)
         valid_kwargs["synthesise"] = True
 
         with pytest.raises(ConfigurationError) as exc_info:
             validate_cli_config(**valid_kwargs)
 
         errors_text = " ".join(exc_info.value.errors)
-        assert "AZURE_TEXT_API_KEY" in errors_text
+        assert "TRANSCRIBER_TEXT_MODEL" in errors_text
         assert "--synthesise" in errors_text
 
-    def test_synthesise_only_requires_text_api(self, valid_kwargs, monkeypatch):
-        """--synthesise-only requires text API credentials."""
-        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
-        monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
+    def test_synthesise_only_requires_text_model(self, valid_kwargs, monkeypatch):
+        """--synthesise-only requires TRANSCRIBER_TEXT_MODEL."""
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.delenv("TRANSCRIBER_TEXT_MODEL", raising=False)
         valid_kwargs["synthesise_only"] = True
 
         with pytest.raises(ConfigurationError) as exc_info:
             validate_cli_config(**valid_kwargs)
 
         errors_text = " ".join(exc_info.value.errors)
-        assert "AZURE_TEXT_API_KEY" in errors_text
+        assert "TRANSCRIBER_TEXT_MODEL" in errors_text
         assert "--synthesise-only" in errors_text
 
     def test_synthesise_only_and_synthesise_conflict(self, valid_kwargs, monkeypatch):
         """--synthesise and --synthesise-only cannot be used together."""
-        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["synthesise"] = True
         valid_kwargs["synthesise_only"] = True
 
@@ -177,8 +182,9 @@ class TestValidateCliConfig:
 
     def test_synthesise_only_transcript_not_found(self, valid_kwargs, monkeypatch):
         """--synthesise-only fails if transcript file not found."""
-        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["synthesise_only"] = True
         valid_kwargs["audio_file"] = "/nonexistent/transcript.txt"
 
@@ -192,8 +198,9 @@ class TestValidateCliConfig:
         transcript = tmp_path / "transcript.txt"
         transcript.write_text("Some transcript content")
 
-        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["synthesise_only"] = True
         valid_kwargs["audio_file"] = str(transcript)
 
@@ -202,15 +209,15 @@ class TestValidateCliConfig:
         assert config.synthesise_only is True
         assert config.audio_file == transcript
 
-    def test_synthesise_only_no_transcribe_creds_needed(self, valid_kwargs, monkeypatch, tmp_path):
-        """--synthesise-only does not require Azure transcription credentials."""
+    def test_synthesise_only_no_transcribe_model_needed(self, valid_kwargs, monkeypatch, tmp_path):
+        """--synthesise-only does not require TRANSCRIBER_MODEL (transcription model)."""
         transcript = tmp_path / "transcript.txt"
         transcript.write_text("Some transcript content")
 
-        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
-        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.delenv("TRANSCRIBER_MODEL", raising=False)
+        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["synthesise_only"] = True
         valid_kwargs["audio_file"] = str(transcript)
 
@@ -220,15 +227,16 @@ class TestValidateCliConfig:
 
     def test_valid_config_returns_dataclass(self, valid_kwargs, monkeypatch):
         """Valid config returns ValidatedConfig dataclass."""
-        monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
 
         config = validate_cli_config(**valid_kwargs)
 
         assert config.parallel_workers == 15
         assert config.synthesise is False
         assert config.glossary is None
-        assert config.transcribe_api_key == "test-key"
+        assert config.api_key == "test-key"
 
 
 class TestValidationHappensBeforeWork:
@@ -264,10 +272,15 @@ class TestValidationHappensBeforeWork:
         import sys
 
         env = os.environ.copy()
-        env["AZURE_TRANSCRIBE_API_KEY"] = "test-key"
-        env["AZURE_TRANSCRIBE_URL"] = "https://test.example.com"
-        env["AZURE_TEXT_API_KEY"] = "test-key"
-        env["AZURE_TEXT_URL"] = "https://test.example.com"
+        env["TRANSCRIBER_API_KEY"] = "test-key"
+        env["TRANSCRIBER_BASE_URL"] = "https://test.example.com"
+        env["TRANSCRIBER_MODEL"] = "test-model"
+        env["TRANSCRIBER_TEXT_MODEL"] = "test-model"
+        # Remove old vars to avoid interference
+        env.pop("AZURE_TRANSCRIBE_API_KEY", None)
+        env.pop("AZURE_TRANSCRIBE_URL", None)
+        env.pop("AZURE_TEXT_API_KEY", None)
+        env.pop("AZURE_TEXT_URL", None)
 
         result = subprocess.run(
             [
@@ -309,44 +322,87 @@ class TestValidationHappensBeforeWork:
         )
 
         assert result.returncode != 0
-        assert "AZURE_TRANSCRIBE_API_KEY" in result.stderr
+        assert "OPENAI_API_KEY" in result.stderr
         assert "Converting" not in result.stderr
 
 
 class TestMissingCredentials:
-    """Tests for missing Azure credentials via settings .from_env()."""
+    """Tests for missing credentials via settings .from_env()."""
 
-    def test_missing_transcription_api_key(self, clean_env):
-        """Raises ConfigurationError when AZURE_TRANSCRIBE_API_KEY is missing."""
+    def test_missing_api_key(self, clean_env):
+        """Raises ConfigurationError when both TRANSCRIBER/OPENAI API keys are missing."""
         from transcriber import AzureTranscriptionSettings
 
         with pytest.raises(ConfigurationError):
             AzureTranscriptionSettings.from_env()
 
-    def test_missing_transcription_api_url(self, clean_env, monkeypatch):
-        """Raises ConfigurationError when AZURE_TRANSCRIBE_URL is missing."""
+    def test_transcriber_api_key_overrides_openai(self, clean_env, monkeypatch):
+        """TRANSCRIBER_API_KEY takes precedence over OPENAI_API_KEY."""
+        from transcriber._settings import resolve_api_key
+
+        monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "transcriber-key")
+        assert resolve_api_key() == "transcriber-key"
+
+    def test_openai_api_key_used_as_fallback(self, clean_env, monkeypatch):
+        """OPENAI_API_KEY is used when TRANSCRIBER_API_KEY is not set."""
+        from transcriber._settings import resolve_api_key
+
+        monkeypatch.setenv("OPENAI_API_KEY", "openai-fallback-key")
+        assert resolve_api_key() == "openai-fallback-key"
+
+    def test_missing_base_url(self, clean_env, monkeypatch):
+        """Raises ConfigurationError when both TRANSCRIBER/OPENAI base URLs are missing."""
         from transcriber import AzureTranscriptionSettings
 
-        monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
 
         with pytest.raises(ConfigurationError):
             AzureTranscriptionSettings.from_env()
 
-    def test_missing_text_api_key(self, clean_env):
-        """Raises ConfigurationError when AZURE_TEXT_API_KEY is missing."""
+    def test_missing_transcription_model(self, clean_env, monkeypatch):
+        """Raises ConfigurationError when TRANSCRIBER_MODEL is missing."""
+        from transcriber import AzureTranscriptionSettings
+
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://example.com")
+
+        with pytest.raises(ConfigurationError):
+            AzureTranscriptionSettings.from_env()
+
+    def test_missing_text_model(self, clean_env, monkeypatch):
+        """Raises ConfigurationError when TRANSCRIBER_TEXT_MODEL is missing."""
         from transcriber import AzureLLMSettings
+
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://example.com")
 
         with pytest.raises(ConfigurationError):
             AzureLLMSettings.from_env()
 
-    def test_missing_text_api_url(self, clean_env, monkeypatch):
-        """Raises ConfigurationError when AZURE_TEXT_URL is missing."""
+    def test_from_env_transcription_includes_model(self, monkeypatch):
+        """AzureTranscriptionSettings.from_env() returns settings with model."""
+        from transcriber import AzureTranscriptionSettings
+
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://example.com")
+        monkeypatch.setenv("TRANSCRIBER_MODEL", "my-transcribe-model")
+
+        settings = AzureTranscriptionSettings.from_env()
+        assert settings.model == "my-transcribe-model"
+        assert settings.api_key == "test-key"
+
+    def test_from_env_llm_includes_model(self, monkeypatch):
+        """AzureLLMSettings.from_env() returns settings with model."""
         from transcriber import AzureLLMSettings
 
-        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-text-key")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://example.com")
+        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "my-llm-model")
 
-        with pytest.raises(ConfigurationError):
-            AzureLLMSettings.from_env()
+        settings = AzureLLMSettings.from_env()
+        assert settings.model == "my-llm-model"
+        assert settings.api_key == "test-key"
 
 
 class TestFileValidation:
@@ -373,7 +429,8 @@ class TestInvalidApiCredentials:
 
         backend = create_azure_transcription_backend(
             api_key="invalid-api-key-12345",
-            api_url="https://invalid-endpoint.openai.azure.com/openai/deployments/test/audio/transcriptions?api-version=2025-03-01-preview",
+            api_url="https://invalid-endpoint.openai.azure.com",
+            model="test-model",
         )
         try:
             with pytest.raises((TranscriptionError, Exception)):
@@ -389,6 +446,7 @@ class TestInvalidApiCredentials:
         backend = create_azure_transcription_backend(
             api_key="test-key",
             api_url="https://this-endpoint-does-not-exist-12345.openai.azure.com/test",
+            model="test-model",
         )
         try:
             with pytest.raises((TranscriptionError, Exception)):
@@ -520,12 +578,12 @@ class TestLocalModeValidation:
             "model": "base",
         }
 
-    def test_local_mode_no_azure_credentials_required(self, local_kwargs, monkeypatch):
-        """--local works without AZURE_TRANSCRIBE_* env vars."""
-        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
-        monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
+    def test_local_mode_no_credentials_required(self, local_kwargs, monkeypatch):
+        """--local without text features works without any API credentials."""
+        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("TRANSCRIBER_BASE_URL", raising=False)
+        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
         # Mock whisper import
         original_import = builtins.__import__
@@ -542,28 +600,30 @@ class TestLocalModeValidation:
 
         config = validate_cli_config(**local_kwargs)
         assert config.local_mode is True
-        assert config.transcribe_api_key == ""
-        assert config.transcribe_url == ""
+        assert config.api_key == ""
+        assert config.base_url == ""
 
     def test_azure_mode_still_requires_credentials(self, local_kwargs, monkeypatch):
-        """Default (non-local) mode still requires Azure credentials."""
+        """Default (non-local) mode still requires API credentials."""
         local_kwargs["local"] = False
-        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
+        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("TRANSCRIBER_BASE_URL", raising=False)
+        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
         with pytest.raises(ConfigurationError) as exc_info:
             validate_cli_config(**local_kwargs)
 
         errors_text = " ".join(exc_info.value.errors)
-        assert "AZURE_TRANSCRIBE_API_KEY" in errors_text
+        assert "OPENAI_API_KEY" in errors_text
 
-    def test_local_with_glossary_requires_text_api(self, local_kwargs, monkeypatch):
-        """--local with --glossary still requires Azure text API credentials."""
+    def test_local_with_glossary_requires_text_credentials(self, local_kwargs, monkeypatch):
+        """--local with --glossary still requires LLM credentials and text model."""
         local_kwargs["glossary"] = "/some/glossary.txt"
-        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
-        monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
+        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("TRANSCRIBER_BASE_URL", raising=False)
+        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
         # Mock whisper import
         original_import = builtins.__import__
@@ -581,17 +641,17 @@ class TestLocalModeValidation:
             validate_cli_config(**local_kwargs)
 
         errors_text = " ".join(exc_info.value.errors)
-        # Should require text API but NOT transcription API
-        assert "AZURE_TEXT_API_KEY" in errors_text
-        assert "AZURE_TRANSCRIBE_API_KEY" not in errors_text
+        # Should require LLM credentials but NOT transcription model
+        assert "OPENAI_API_KEY" in errors_text
+        assert "TRANSCRIBER_MODEL" not in errors_text
 
-    def test_local_with_synthesise_requires_text_api(self, local_kwargs, monkeypatch):
-        """--local with --synthesise still requires Azure text API credentials."""
+    def test_local_with_synthesise_requires_text_credentials(self, local_kwargs, monkeypatch):
+        """--local with --synthesise still requires LLM credentials and text model."""
         local_kwargs["synthesise"] = True
-        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
-        monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
+        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("TRANSCRIBER_BASE_URL", raising=False)
+        monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
         # Mock whisper import
         original_import = builtins.__import__
@@ -609,12 +669,12 @@ class TestLocalModeValidation:
             validate_cli_config(**local_kwargs)
 
         errors_text = " ".join(exc_info.value.errors)
-        assert "AZURE_TEXT_API_KEY" in errors_text
+        assert "OPENAI_API_KEY" in errors_text
 
     def test_local_mode_whisper_not_installed_error(self, local_kwargs, monkeypatch):
         """--local mode fails with helpful message when whisper not installed."""
-        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
+        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
         # Mock whisper import to fail
         original_import = builtins.__import__
@@ -661,8 +721,9 @@ class TestTextFileAutoDetection:
         transcript = tmp_path / f"meeting{ext}"
         transcript.write_text("Some transcript content")
 
-        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["audio_file"] = str(transcript)
 
         config = validate_cli_config(**valid_kwargs)
@@ -674,8 +735,9 @@ class TestTextFileAutoDetection:
         transcript = tmp_path / "notes.txt"
         transcript.write_text("Some notes")
 
-        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["audio_file"] = str(transcript)
         valid_kwargs["synthesise"] = True
 
@@ -683,40 +745,40 @@ class TestTextFileAutoDetection:
 
         assert config.synthesise_only is True
 
-    def test_text_file_no_transcription_creds_needed(self, valid_kwargs, monkeypatch, tmp_path):
-        """Text files do not require Azure transcription credentials."""
+    def test_text_file_no_transcription_model_needed(self, valid_kwargs, monkeypatch, tmp_path):
+        """Text files do not require TRANSCRIBER_MODEL (transcription model)."""
         transcript = tmp_path / "transcript.txt"
         transcript.write_text("Some transcript content")
 
-        monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
-        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        monkeypatch.delenv("TRANSCRIBER_MODEL", raising=False)
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["audio_file"] = str(transcript)
 
         config = validate_cli_config(**valid_kwargs)
 
         assert config.synthesise_only is True
 
-    def test_text_file_requires_llm_creds(self, valid_kwargs, monkeypatch, tmp_path):
-        """Text files require LLM credentials for synthesis."""
+    def test_text_file_requires_api_credentials(self, valid_kwargs, monkeypatch, tmp_path):
+        """Text files require shared API credentials for LLM synthesis."""
         transcript = tmp_path / "transcript.txt"
         transcript.write_text("Some transcript content")
 
-        monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
-        monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
+        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         valid_kwargs["audio_file"] = str(transcript)
 
         with pytest.raises(ConfigurationError) as exc_info:
             validate_cli_config(**valid_kwargs)
 
         errors_text = " ".join(exc_info.value.errors)
-        assert "AZURE_TEXT_API_KEY" in errors_text
+        assert "OPENAI_API_KEY" in errors_text
 
     def test_text_file_not_found(self, valid_kwargs, monkeypatch):
         """Non-existent text file raises ConfigurationError."""
-        monkeypatch.setenv("AZURE_TEXT_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TEXT_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
         valid_kwargs["audio_file"] = "/nonexistent/transcript.txt"
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -726,8 +788,9 @@ class TestTextFileAutoDetection:
 
     def test_audio_extension_not_auto_detected(self, valid_kwargs, monkeypatch):
         """Audio file extensions are NOT auto-detected as text files."""
-        monkeypatch.setenv("AZURE_TRANSCRIBE_API_KEY", "test-key")
-        monkeypatch.setenv("AZURE_TRANSCRIBE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
 
         config = validate_cli_config(**valid_kwargs)
 

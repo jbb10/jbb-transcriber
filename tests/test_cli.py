@@ -12,14 +12,12 @@ import tempfile
 class TestCLIBasicUsage:
     """Tests for basic CLI functionality."""
 
-    def test_cli_basic_usage(
-        self, short_audio_file, temp_output_file, azure_transcribe_config, monkeypatch
-    ):
+    def test_cli_basic_usage(self, short_audio_file, temp_output_file, litellm_config, monkeypatch):
         """transcribe input.mp3 output.txt works correctly."""
         # Set environment variables for the subprocess
         env = os.environ.copy()
-        env["AZURE_TRANSCRIBE_API_KEY"] = azure_transcribe_config["transcribe_key"]
-        env["AZURE_TRANSCRIBE_URL"] = azure_transcribe_config["transcribe_url"]
+        env["TRANSCRIBER_API_KEY"] = litellm_config["api_key"]
+        env["TRANSCRIBER_BASE_URL"] = litellm_config["base_url"]
 
         result = subprocess.run(
             [sys.executable, "-m", "transcriber", short_audio_file, temp_output_file],
@@ -40,11 +38,11 @@ class TestCLIBasicUsage:
         # Should contain speaker labels (e.g., "A:", "B:")
         assert re.search(r"\] [A-Z]:", content), "Output should contain speaker labels"
 
-    def test_cli_default_output(self, short_audio_file, azure_transcribe_config):
+    def test_cli_default_output(self, short_audio_file, litellm_config):
         """Output defaults to input filename with .txt extension."""
         env = os.environ.copy()
-        env["AZURE_TRANSCRIBE_API_KEY"] = azure_transcribe_config["transcribe_key"]
-        env["AZURE_TRANSCRIBE_URL"] = azure_transcribe_config["transcribe_url"]
+        env["TRANSCRIBER_API_KEY"] = litellm_config["api_key"]
+        env["TRANSCRIBER_BASE_URL"] = litellm_config["base_url"]
 
         # Copy audio to temp location to avoid polluting fixtures
         import shutil
@@ -77,10 +75,9 @@ class TestCLIWithGlossary:
     ):
         """--glossary flag works correctly."""
         env = os.environ.copy()
-        env["AZURE_TRANSCRIBE_API_KEY"] = azure_text_config["transcribe_key"]
-        env["AZURE_TRANSCRIBE_URL"] = azure_text_config["transcribe_url"]
-        env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
-        env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+        env["TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
+        env["TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
+        env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
         result = subprocess.run(
             [
@@ -112,10 +109,9 @@ class TestCLIWithGlossary:
     ):
         """-g short flag for glossary works."""
         env = os.environ.copy()
-        env["AZURE_TRANSCRIBE_API_KEY"] = azure_text_config["transcribe_key"]
-        env["AZURE_TRANSCRIBE_URL"] = azure_text_config["transcribe_url"]
-        env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
-        env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+        env["TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
+        env["TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
+        env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
         result = subprocess.run(
             [
@@ -149,13 +145,11 @@ class TestCLIErrorHandling:
 
         assert result.returncode != 0, "Should fail for missing input file"
 
-    def test_cli_missing_glossary_file(
-        self, short_audio_file, temp_output_file, azure_transcribe_config
-    ):
+    def test_cli_missing_glossary_file(self, short_audio_file, temp_output_file, litellm_config):
         """CLI fails gracefully for missing glossary file."""
         env = os.environ.copy()
-        env["AZURE_TRANSCRIBE_API_KEY"] = azure_transcribe_config["transcribe_key"]
-        env["AZURE_TRANSCRIBE_URL"] = azure_transcribe_config["transcribe_url"]
+        env["TRANSCRIBER_API_KEY"] = litellm_config["api_key"]
+        env["TRANSCRIBER_BASE_URL"] = litellm_config["base_url"]
 
         result = subprocess.run(
             [
@@ -187,13 +181,11 @@ class TestCLIErrorHandling:
         assert "--glossary" in result.stdout
         assert "--synthesise" in result.stdout
 
-    def test_cli_parallel_workers_option(
-        self, short_audio_file, temp_output_file, azure_transcribe_config
-    ):
+    def test_cli_parallel_workers_option(self, short_audio_file, temp_output_file, litellm_config):
         """--parallel-workers option is accepted."""
         env = os.environ.copy()
-        env["AZURE_TRANSCRIBE_API_KEY"] = azure_transcribe_config["transcribe_key"]
-        env["AZURE_TRANSCRIBE_URL"] = azure_transcribe_config["transcribe_url"]
+        env["TRANSCRIBER_API_KEY"] = litellm_config["api_key"]
+        env["TRANSCRIBER_BASE_URL"] = litellm_config["base_url"]
 
         result = subprocess.run(
             [
@@ -229,10 +221,9 @@ class TestCLIWithSynthesis:
             expected_synthesis = os.path.join(temp_dir, "test_audio_synthesis.md")
 
             env = os.environ.copy()
-            env["AZURE_TRANSCRIBE_API_KEY"] = azure_text_config["transcribe_key"]
-            env["AZURE_TRANSCRIBE_URL"] = azure_text_config["transcribe_url"]
-            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
-            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+            env["TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
+            env["TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
+            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
                 [
@@ -270,10 +261,9 @@ class TestCLIWithSynthesis:
             expected_synthesis = os.path.join(temp_dir, "test_audio_synthesis.md")
 
             env = os.environ.copy()
-            env["AZURE_TRANSCRIBE_API_KEY"] = azure_text_config["transcribe_key"]
-            env["AZURE_TRANSCRIBE_URL"] = azure_text_config["transcribe_url"]
-            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
-            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+            env["TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
+            env["TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
+            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
                 [
@@ -308,10 +298,9 @@ class TestCLIWithSynthesis:
             expected_synthesis = os.path.join(temp_dir, "test_audio_synthesis.md")
 
             env = os.environ.copy()
-            env["AZURE_TRANSCRIBE_API_KEY"] = azure_text_config["transcribe_key"]
-            env["AZURE_TRANSCRIBE_URL"] = azure_text_config["transcribe_url"]
-            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
-            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+            env["TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
+            env["TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
+            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
                 [
@@ -357,8 +346,7 @@ class TestCLISynthesiseOnly:
             expected_synthesis = os.path.join(temp_dir, "meeting_synthesis.md")
 
             env = os.environ.copy()
-            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
-            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
                 [
@@ -391,8 +379,7 @@ class TestCLISynthesiseOnly:
             expected_synthesis = os.path.join(temp_dir, "notes_synthesis.md")
 
             env = os.environ.copy()
-            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
-            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
                 [
@@ -421,8 +408,7 @@ class TestCLISynthesiseOnly:
                 f.write("")
 
             env = os.environ.copy()
-            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
-            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
                 [
@@ -509,8 +495,7 @@ class TestCLITextFileAutoDetection:
             expected_synthesis = os.path.join(temp_dir, "meeting_synthesis.md")
 
             env = os.environ.copy()
-            env["AZURE_TEXT_API_KEY"] = azure_text_config["text_key"]
-            env["AZURE_TEXT_URL"] = azure_text_config["text_url"]
+            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
                 [sys.executable, "-m", "transcriber", transcript_path],
@@ -532,8 +517,9 @@ class TestCLITextFileAutoDetection:
                 f.write("Some notes")
 
             env = os.environ.copy()
-            env["AZURE_TEXT_API_KEY"] = "test-key"
-            env["AZURE_TEXT_URL"] = "https://test.example.com"
+            env["TRANSCRIBER_API_KEY"] = "test-key"
+            env["TRANSCRIBER_BASE_URL"] = "https://test.example.com"
+            env["TRANSCRIBER_TEXT_MODEL"] = "fake-text-model"
 
             result = subprocess.run(
                 [sys.executable, "-m", "transcriber", transcript_path],

@@ -23,51 +23,60 @@ def fixtures_dir():
 
 
 @pytest.fixture(scope="session")
-def azure_transcribe_config():
-    """Azure transcription API configuration.
+def litellm_config():
+    """Shared LiteLLM proxy configuration.
 
+    Resolves TRANSCRIBER_API_KEY → OPENAI_API_KEY and
+    TRANSCRIBER_BASE_URL → OPENAI_BASE_URL, matching the app's own logic.
     Skips tests if credentials are not configured.
     """
-    api_key = os.getenv("AZURE_TRANSCRIBE_API_KEY")
-    api_url = os.getenv("AZURE_TRANSCRIBE_URL")
+    api_key = os.getenv("TRANSCRIBER_API_KEY") or os.getenv("OPENAI_API_KEY")
+    base_url = os.getenv("TRANSCRIBER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
+    model = os.getenv("TRANSCRIBER_MODEL")
 
-    if not api_key or not api_url:
-        pytest.skip("Azure transcription credentials not configured in tests/.env")
+    if not api_key or not base_url:
+        pytest.skip("LiteLLM proxy credentials not configured in tests/.env")
+    if not model:
+        pytest.skip(
+            "TRANSCRIBER_MODEL not configured in tests/.env — "
+            'add: TRANSCRIBER_MODEL="your-model-name"'
+        )
 
     return {
-        "transcribe_key": api_key,
-        "transcribe_url": api_url,
+        "api_key": api_key,
+        "base_url": base_url,
+        "model": model,
     }
 
 
 @pytest.fixture
-def azure_transcription_backend(azure_transcribe_config):
+def azure_transcription_backend(litellm_config):
     """An AzureTranscriptionBackend built from test credentials."""
     from transcriber.backends import create_azure_transcription_backend
 
     return create_azure_transcription_backend(
-        api_key=azure_transcribe_config["transcribe_key"],
-        api_url=azure_transcribe_config["transcribe_url"],
+        api_key=litellm_config["api_key"],
+        api_url=litellm_config["base_url"],
+        model=litellm_config["model"],
     )
 
 
 @pytest.fixture(scope="session")
-def azure_text_config(azure_transcribe_config):
-    """Azure text/chat API configuration for glossary correction.
+def azure_text_config(litellm_config):
+    """LiteLLM config extended with text model for glossary/synthesis tests.
 
-    Includes transcription config plus text API credentials.
-    Skips tests if text API credentials are not configured.
+    Skips if TRANSCRIBER_TEXT_MODEL is not configured.
     """
-    text_key = os.getenv("AZURE_TEXT_API_KEY")
-    text_url = os.getenv("AZURE_TEXT_URL")
-
-    if not text_key or not text_url:
-        pytest.skip("Azure text API credentials not configured in tests/.env")
+    text_model = os.getenv("TRANSCRIBER_TEXT_MODEL")
+    if not text_model:
+        pytest.skip(
+            "TRANSCRIBER_TEXT_MODEL not configured in tests/.env — "
+            'add: TRANSCRIBER_TEXT_MODEL="your-text-model-name"'
+        )
 
     return {
-        **azure_transcribe_config,
-        "text_key": text_key,
-        "text_url": text_url,
+        **litellm_config,
+        "text_model": text_model,
     }
 
 
@@ -77,8 +86,9 @@ def azure_llm_backend(azure_text_config):
     from transcriber.backends import create_azure_llm_backend
 
     return create_azure_llm_backend(
-        api_key=azure_text_config["text_key"],
-        api_url=azure_text_config["text_url"],
+        api_key=azure_text_config["api_key"],
+        api_url=azure_text_config["base_url"],
+        model=azure_text_config["text_model"],
     )
 
 
@@ -165,8 +175,17 @@ def temp_output_file():
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    """Remove Azure environment variables for negative tests."""
+    """Remove all transcriber and OpenAI env vars for isolation in negative tests."""
+    monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+    monkeypatch.delenv("TRANSCRIBER_BASE_URL", raising=False)
+    monkeypatch.delenv("TRANSCRIBER_MODEL", raising=False)
+    monkeypatch.delenv("TRANSCRIBER_TEXT_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    # Legacy vars (in case any are still set in the shell)
     monkeypatch.delenv("AZURE_TRANSCRIBE_API_KEY", raising=False)
     monkeypatch.delenv("AZURE_TRANSCRIBE_URL", raising=False)
+    monkeypatch.delenv("AZURE_TRANSCRIBE_MODEL", raising=False)
     monkeypatch.delenv("AZURE_TEXT_API_KEY", raising=False)
     monkeypatch.delenv("AZURE_TEXT_URL", raising=False)
+    monkeypatch.delenv("AZURE_TEXT_MODEL", raising=False)

@@ -1,6 +1,9 @@
 ### macOS
 .DS_Store
 
+### BMAD output
+_bmad-output/
+
 ### Python
 __pycache__/
 *.py[cod]

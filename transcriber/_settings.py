@@ -3,6 +3,16 @@
 Each provider has its own settings type with a ``from_env()`` classmethod
 for convenient environment-variable loading.  ``PipelineSettings`` holds
 cross-cutting pipeline configuration (chunking, retry, concurrency).
+
+Environment variable resolution
+--------------------------------
+Both backends share a single LiteLLM proxy endpoint.  Credentials are
+resolved with per-app override → org-wide default fallback:
+
+* ``TRANSCRIBER_API_KEY``  →  ``OPENAI_API_KEY``   (API key)
+* ``TRANSCRIBER_BASE_URL`` →  ``OPENAI_BASE_URL``   (proxy base URL, e.g. ``/v1``)
+* ``TRANSCRIBER_MODEL``                              (transcription model name)
+* ``TRANSCRIBER_TEXT_MODEL``                         (LLM/chat model name)
 """
 
 from __future__ import annotations
@@ -14,84 +24,116 @@ from transcriber._exceptions import ConfigurationError
 from transcriber._security import validate_https_url
 
 
+def resolve_api_key() -> str | None:
+    """Return TRANSCRIBER_API_KEY, falling back to OPENAI_API_KEY."""
+    return os.getenv("TRANSCRIBER_API_KEY") or os.getenv("OPENAI_API_KEY") or None
+
+
+def resolve_base_url() -> str | None:
+    """Return TRANSCRIBER_BASE_URL, falling back to OPENAI_BASE_URL."""
+    return os.getenv("TRANSCRIBER_BASE_URL") or os.getenv("OPENAI_BASE_URL") or None
+
+
 @dataclass(frozen=True)
 class AzureTranscriptionSettings:
-    """Settings for the Azure OpenAI transcription backend."""
+    """Settings for the transcription backend (LiteLLM proxy via OpenAI SDK)."""
 
     api_key: str
     api_url: str
-    model: str = "gpt-4o-transcribe-diarize"
+    model: str
     request_timeout: int = 600
 
     @classmethod
     def from_env(cls) -> AzureTranscriptionSettings:
         """Create settings from environment variables.
 
+        Resolution order:
+          * api_key  — ``TRANSCRIBER_API_KEY`` → ``OPENAI_API_KEY``
+          * api_url  — ``TRANSCRIBER_BASE_URL`` → ``OPENAI_BASE_URL``
+          * model    — ``TRANSCRIBER_MODEL``
+
         Raises:
             ConfigurationError: If required env vars are missing.
             SecurityError: If the URL is not HTTPS.
         """
         errors: list[str] = []
-        api_key = os.getenv("AZURE_TRANSCRIBE_API_KEY")
-        api_url = os.getenv("AZURE_TRANSCRIBE_URL")
+        api_key = resolve_api_key()
+        api_url = resolve_base_url()
+        model = os.getenv("TRANSCRIBER_MODEL")
 
         if not api_key:
             errors.append(
-                "AZURE_TRANSCRIBE_API_KEY environment variable is not set. "
-                'Add to ~/.zshrc: export AZURE_TRANSCRIBE_API_KEY="your-api-key"'
+                "Neither TRANSCRIBER_API_KEY nor OPENAI_API_KEY is set. "
+                'Add to ~/.zshrc: export TRANSCRIBER_API_KEY="your-litellm-key"'
             )
         if not api_url:
             errors.append(
-                "AZURE_TRANSCRIBE_URL environment variable is not set. "
-                'Add to ~/.zshrc: export AZURE_TRANSCRIBE_URL="your-endpoint-url"'
+                "Neither TRANSCRIBER_BASE_URL nor OPENAI_BASE_URL is set. "
+                'Add to ~/.zshrc: export TRANSCRIBER_BASE_URL="https://your-proxy.example.com/v1"'
+            )
+        if not model:
+            errors.append(
+                "TRANSCRIBER_MODEL environment variable is not set. "
+                'Add to ~/.zshrc: export TRANSCRIBER_MODEL="your-model-name"'
             )
         if errors:
             raise ConfigurationError(errors)
 
         assert api_url is not None  # noqa: S101 — guarded above
-        validate_https_url(api_url, name="AZURE_TRANSCRIBE_URL")
+        validate_https_url(api_url, name="TRANSCRIBER_BASE_URL")
 
-        return cls(api_key=api_key, api_url=api_url)  # type: ignore[arg-type]
+        return cls(api_key=api_key, api_url=api_url, model=model)  # type: ignore[arg-type]
 
 
 @dataclass(frozen=True)
 class AzureLLMSettings:
-    """Settings for the Azure OpenAI LLM (chat-completions) backend."""
+    """Settings for the LLM chat-completions backend (LiteLLM proxy via OpenAI SDK)."""
 
     api_key: str
     api_url: str
-    model: str = "gpt-5.1"
+    model: str
     request_timeout: int = 300
 
     @classmethod
     def from_env(cls) -> AzureLLMSettings:
         """Create settings from environment variables.
 
+        Resolution order:
+          * api_key  — ``TRANSCRIBER_API_KEY`` → ``OPENAI_API_KEY``
+          * api_url  — ``TRANSCRIBER_BASE_URL`` → ``OPENAI_BASE_URL``
+          * model    — ``TRANSCRIBER_TEXT_MODEL``
+
         Raises:
             ConfigurationError: If required env vars are missing.
             SecurityError: If the URL is not HTTPS.
         """
         errors: list[str] = []
-        api_key = os.getenv("AZURE_TEXT_API_KEY")
-        api_url = os.getenv("AZURE_TEXT_URL")
+        api_key = resolve_api_key()
+        api_url = resolve_base_url()
+        model = os.getenv("TRANSCRIBER_TEXT_MODEL")
 
         if not api_key:
             errors.append(
-                "AZURE_TEXT_API_KEY environment variable is not set. "
-                'Add to ~/.zshrc: export AZURE_TEXT_API_KEY="your-api-key"'
+                "Neither TRANSCRIBER_API_KEY nor OPENAI_API_KEY is set. "
+                'Add to ~/.zshrc: export TRANSCRIBER_API_KEY="your-litellm-key"'
             )
         if not api_url:
             errors.append(
-                "AZURE_TEXT_URL environment variable is not set. "
-                'Add to ~/.zshrc: export AZURE_TEXT_URL="your-endpoint-url"'
+                "Neither TRANSCRIBER_BASE_URL nor OPENAI_BASE_URL is set. "
+                'Add to ~/.zshrc: export TRANSCRIBER_BASE_URL="https://your-proxy.example.com/v1"'
+            )
+        if not model:
+            errors.append(
+                "TRANSCRIBER_TEXT_MODEL environment variable is not set. "
+                'Add to ~/.zshrc: export TRANSCRIBER_TEXT_MODEL="your-model-name"'
             )
         if errors:
             raise ConfigurationError(errors)
 
         assert api_url is not None  # noqa: S101 — guarded above
-        validate_https_url(api_url, name="AZURE_TEXT_URL")
+        validate_https_url(api_url, name="TRANSCRIBER_BASE_URL")
 
-        return cls(api_key=api_key, api_url=api_url)  # type: ignore[arg-type]
+        return cls(api_key=api_key, api_url=api_url, model=model)  # type: ignore[arg-type]
 
 
 @dataclass(frozen=True)
@@ -108,7 +150,7 @@ class PipelineSettings:
 
     chunk_duration: int = 900
     parallel_workers: int = 15
-    max_duration_before_split: int = 1400
+    max_duration_before_split: int = 900
     max_retries: int = 3
     base_delay: float = 2.0
     max_glossary_size: int = 500_000

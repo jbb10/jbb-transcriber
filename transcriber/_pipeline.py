@@ -143,6 +143,9 @@ async def transcribe(
                 should_retry=is_transient_http_error,
             )
 
+            if on_chunk_complete is not None:
+                on_chunk_complete(0, 1)
+
             if glossary_text and llm_backend is not None:
                 logger.debug("Applying glossary correction")
                 correction = await _correct_with_glossary(
