@@ -1,6 +1,12 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [4.0.0] - 2026-03-22
+
+### Features
+- Unified env vars and pipeline reliability improvements (**BREAKING**)
+
+
 ## [3.1.0] - 2026-03-11
 
 ### Bug Fixes
