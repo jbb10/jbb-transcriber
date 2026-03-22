@@ -1,6 +1,12 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+## [4.0.1] - 2026-03-22
+
+### Bug Fixes
+- Reduce chunk duration and add env-var tuning for Azure App Service timeout
+
+
 ## [4.0.0] - 2026-03-22
 
 ### Features
