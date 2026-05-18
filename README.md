@@ -197,15 +197,15 @@ except transcriber.TranscriberError as e:
 
 ## Configuration
 
-This tool routes all API calls through a **LiteLLM proxy**, which provides centralised key management and model routing. You will need:
+This tool connects to any **OpenAI-compatible API**. You will need:
 
 ### Required Configuration
 
-1. **LiteLLM proxy URL:** The base URL of your LiteLLM proxy (e.g., `https://your-litellm-proxy.azurewebsites.net/v1`).
+1. **API base URL:** The base URL of your OpenAI-compatible endpoint (e.g., `https://your-endpoint.openai.azure.com/openai/deployments/v1`).
 
-2. **LiteLLM virtual API keys:** Both transcription and text endpoints use a virtual key issued by the proxy.
+2. **API key:** Both transcription and text endpoints use the key for your API.
 
-3. **Model names:** Specify the model name as configured in the proxy:
+3. **Model names:** Specify the model name as exposed by the API:
    - `TRANSCRIBER_MODEL` — model for audio transcription (e.g., `gpt-4o-transcribe`)
    - `TRANSCRIBER_TEXT_MODEL` — model for glossary correction and synthesis (e.g., `gpt-4o`)
 
@@ -214,23 +214,23 @@ This tool routes all API calls through a **LiteLLM proxy**, which provides centr
 Add the following environment variables to your `~/.zshrc` file:
 
 ```bash
-# Shared LiteLLM proxy credentials
+# API credentials
 # TRANSCRIBER_* takes priority; falls back to OPENAI_API_KEY / OPENAI_BASE_URL
-export TRANSCRIBER_API_KEY="your-litellm-virtual-key"
-export TRANSCRIBER_BASE_URL="https://your-litellm-proxy.azurewebsites.net/v1"
+export TRANSCRIBER_API_KEY="your-api-key"
+export TRANSCRIBER_BASE_URL="https://your-endpoint/v1"
 
-# Model names as configured in your LiteLLM proxy
+# Model names
 export TRANSCRIBER_MODEL="your-transcription-model-name"
 export TRANSCRIBER_TEXT_MODEL="your-text-model-name"  # only needed for --glossary / --synthesise
 ```
 
 Replace:
-- `your-litellm-proxy` with your LiteLLM proxy hostname
-- `your-litellm-virtual-key` with your LiteLLM virtual API key
-- `your-transcription-model-name` with the model name for transcription as configured in the proxy (e.g., `gpt-4o-transcribe`)
+- `your-endpoint` with your OpenAI-compatible API base URL
+- `your-api-key` with your API key
+- `your-transcription-model-name` with the model name for transcription (e.g., `gpt-4o-transcribe`)
 - `your-text-model-name` with the model name for glossary/synthesis (e.g., `gpt-4o`)
 
-> **Tip:** If `TRANSCRIBER_API_KEY` / `TRANSCRIBER_BASE_URL` are not set, the tool falls back to the standard `OPENAI_API_KEY` and `OPENAI_BASE_URL` environment variables. This makes it easy to share one LiteLLM proxy configuration across multiple tools.
+> **Tip:** If `TRANSCRIBER_API_KEY` / `TRANSCRIBER_BASE_URL` are not set, the tool falls back to the standard `OPENAI_API_KEY` and `OPENAI_BASE_URL` environment variables.
 
 Then reload your shell configuration:
 
@@ -242,7 +242,7 @@ source ~/.zshrc
 
 > **Requires the `[local]` extra:** Install with `uv tool install "transcriber[local] @ ..."` or `uv add "transcriber[local] @ ..."`.
 
-Use the `--local` flag to transcribe audio offline using OpenAI's Whisper model. No API credentials are needed for transcription (though glossary correction and synthesis still require Azure LLM credentials).
+Use the `--local` flag to transcribe audio offline using OpenAI's Whisper model. No API credentials are needed for transcription (though glossary correction and synthesis still require API credentials).
 
 ### Available Models
 
@@ -337,7 +337,7 @@ transcribe meeting.txt -S
 
 This reads the transcript file and creates `meeting_synthesis.md` — no audio processing or transcription credentials are needed.
 
-> **Note:** Synthesis requires LLM credentials (`TRANSCRIBER_API_KEY` and `TRANSCRIBER_BASE_URL`), even when using `--local` for transcription or `--synthesise-only`.
+> **Note:** Synthesis requires API credentials (`TRANSCRIBER_API_KEY` and `TRANSCRIBER_BASE_URL`), even when using `--local` for transcription or `--synthesise-only`.
 
 ## Output Format
 
@@ -363,7 +363,7 @@ Note: Speaker diarization is only available with Azure OpenAI transcription.
 ## Requirements
 
 - Python 3.10 or higher
-- A **LiteLLM proxy** with:
-  - A transcription model configured (e.g., `gpt-4o-transcribe`) — not needed for `--local` or `--synthesise-only`
-  - A chat completion model configured (for `--glossary`, `--synthesise`, and `--synthesise-only`)
+- An **OpenAI-compatible API** with:
+  - A transcription model (e.g., `gpt-4o-transcribe`) — not needed for `--local` or `--synthesise-only`
+  - A chat completion model (for `--glossary`, `--synthesise`, and `--synthesise-only`)
 - **Optional:** `openai-whisper` for local transcription — install with the `[local]` extra
