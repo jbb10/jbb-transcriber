@@ -3,7 +3,7 @@
 # Version: 6.0.4
 # Date: 2026-03-09T21:51:04.705Z
 
-project_name: transcriber
+project_name: jbb-transcriber
 user_skill_level: expert
 planning_artifacts: "{project-root}/_bmad-output/planning-artifacts"
 implementation_artifacts: "{project-root}/_bmad-output/implementation-artifacts"

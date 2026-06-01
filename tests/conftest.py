@@ -1,5 +1,5 @@
 """
-Pytest configuration and fixtures for transcriber tests.
+Pytest configuration and fixtures for jbb_transcriber tests.
 """
 
 import os
@@ -26,20 +26,20 @@ def fixtures_dir():
 def litellm_config():
     """Shared LiteLLM proxy configuration.
 
-    Resolves TRANSCRIBER_API_KEY → OPENAI_API_KEY and
-    TRANSCRIBER_BASE_URL → OPENAI_BASE_URL, matching the app's own logic.
+    Resolves JBB_TRANSCRIBER_API_KEY → OPENAI_API_KEY and
+    JBB_TRANSCRIBER_BASE_URL → OPENAI_BASE_URL, matching the app's own logic.
     Skips tests if credentials are not configured.
     """
-    api_key = os.getenv("TRANSCRIBER_API_KEY") or os.getenv("OPENAI_API_KEY")
-    base_url = os.getenv("TRANSCRIBER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
-    model = os.getenv("TRANSCRIBER_MODEL")
+    api_key = os.getenv("JBB_TRANSCRIBER_API_KEY") or os.getenv("OPENAI_API_KEY")
+    base_url = os.getenv("JBB_TRANSCRIBER_BASE_URL") or os.getenv("OPENAI_BASE_URL")
+    model = os.getenv("JBB_TRANSCRIBER_MODEL")
 
     if not api_key or not base_url:
         pytest.skip("LiteLLM proxy credentials not configured in tests/.env")
     if not model:
         pytest.skip(
-            "TRANSCRIBER_MODEL not configured in tests/.env — "
-            'add: TRANSCRIBER_MODEL="your-model-name"'
+            "JBB_TRANSCRIBER_MODEL not configured in tests/.env — "
+            'add: JBB_TRANSCRIBER_MODEL="your-model-name"'
         )
 
     return {
@@ -52,7 +52,7 @@ def litellm_config():
 @pytest.fixture
 def azure_transcription_backend(litellm_config):
     """An AzureTranscriptionBackend built from test credentials."""
-    from transcriber.backends import create_azure_transcription_backend
+    from jbb_transcriber.backends import create_azure_transcription_backend
 
     return create_azure_transcription_backend(
         api_key=litellm_config["api_key"],
@@ -65,13 +65,13 @@ def azure_transcription_backend(litellm_config):
 def azure_text_config(litellm_config):
     """LiteLLM config extended with text model for glossary/synthesis tests.
 
-    Skips if TRANSCRIBER_TEXT_MODEL is not configured.
+    Skips if JBB_TRANSCRIBER_TEXT_MODEL is not configured.
     """
-    text_model = os.getenv("TRANSCRIBER_TEXT_MODEL")
+    text_model = os.getenv("JBB_TRANSCRIBER_TEXT_MODEL")
     if not text_model:
         pytest.skip(
-            "TRANSCRIBER_TEXT_MODEL not configured in tests/.env — "
-            'add: TRANSCRIBER_TEXT_MODEL="your-text-model-name"'
+            "JBB_TRANSCRIBER_TEXT_MODEL not configured in tests/.env — "
+            'add: JBB_TRANSCRIBER_TEXT_MODEL="your-text-model-name"'
         )
 
     return {
@@ -83,7 +83,7 @@ def azure_text_config(litellm_config):
 @pytest.fixture
 def azure_llm_backend(azure_text_config):
     """An AzureLLMBackend built from test credentials."""
-    from transcriber.backends import create_azure_llm_backend
+    from jbb_transcriber.backends import create_azure_llm_backend
 
     return create_azure_llm_backend(
         api_key=azure_text_config["api_key"],
@@ -175,11 +175,11 @@ def temp_output_file():
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    """Remove all transcriber and OpenAI env vars for isolation in negative tests."""
-    monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
-    monkeypatch.delenv("TRANSCRIBER_BASE_URL", raising=False)
-    monkeypatch.delenv("TRANSCRIBER_MODEL", raising=False)
-    monkeypatch.delenv("TRANSCRIBER_TEXT_MODEL", raising=False)
+    """Remove all jbb_transcriber and OpenAI env vars for isolation in negative tests."""
+    monkeypatch.delenv("JBB_TRANSCRIBER_API_KEY", raising=False)
+    monkeypatch.delenv("JBB_TRANSCRIBER_BASE_URL", raising=False)
+    monkeypatch.delenv("JBB_TRANSCRIBER_MODEL", raising=False)
+    monkeypatch.delenv("JBB_TRANSCRIBER_TEXT_MODEL", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     # Legacy vars (in case any are still set in the shell)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from transcriber._exceptions import ConfigurationError, SecurityError
+from jbb_transcriber._exceptions import ConfigurationError, SecurityError
 
 
 def validate_https_url(url: str, *, name: str = "URL") -> None:

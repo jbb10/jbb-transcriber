@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from transcriber._settings import AzureLLMSettings, AzureTranscriptionSettings
-from transcriber.backends._azure import (
+from jbb_transcriber._settings import AzureLLMSettings, AzureTranscriptionSettings
+from jbb_transcriber.backends._azure import (
     AzureLLMBackend,
     AzureTranscriptionBackend,
     create_azure_llm_backend,
@@ -372,7 +372,7 @@ class TestNoAzureSpecificCode:
         """backends/_azure.py contains no '?api-version=' string."""
         import inspect
 
-        from transcriber.backends import _azure
+        from jbb_transcriber.backends import _azure
 
         source = inspect.getsource(_azure)
         assert "?api-version=" not in source
@@ -381,7 +381,7 @@ class TestNoAzureSpecificCode:
         """backends/_azure.py contains no '/deployments/' string."""
         import inspect
 
-        from transcriber.backends import _azure
+        from jbb_transcriber.backends import _azure
 
         source = inspect.getsource(_azure)
         assert "/deployments/" not in source
@@ -390,7 +390,7 @@ class TestNoAzureSpecificCode:
         """backends/_azure.py contains no 'api-key' header construction."""
         import inspect
 
-        from transcriber.backends import _azure
+        from jbb_transcriber.backends import _azure
 
         source = inspect.getsource(_azure)
         assert '"api-key"' not in source
@@ -437,7 +437,7 @@ class TestErrorHandling:
         """APITimeoutError is wrapped in TranscriptionError."""
         import openai
 
-        from transcriber._exceptions import TranscriptionError
+        from jbb_transcriber._exceptions import TranscriptionError
 
         transcription_backend._client.audio.transcriptions.create = AsyncMock(
             side_effect=openai.APITimeoutError(request=MagicMock())
@@ -451,7 +451,7 @@ class TestErrorHandling:
         """APIStatusError is wrapped in TranscriptionError with status_code."""
         import openai
 
-        from transcriber._exceptions import TranscriptionError
+        from jbb_transcriber._exceptions import TranscriptionError
 
         mock_response = MagicMock()
         mock_response.text = "Unauthorized"
@@ -474,7 +474,7 @@ class TestErrorHandling:
         """APITimeoutError in complete() is wrapped in LLMError."""
         import openai
 
-        from transcriber._exceptions import LLMError
+        from jbb_transcriber._exceptions import LLMError
 
         llm_backend._client.chat.completions.create = AsyncMock(
             side_effect=openai.APITimeoutError(request=MagicMock())
@@ -488,7 +488,7 @@ class TestErrorHandling:
         """APIConnectionError is wrapped in TranscriptionError."""
         import openai
 
-        from transcriber._exceptions import TranscriptionError
+        from jbb_transcriber._exceptions import TranscriptionError
 
         transcription_backend._client.audio.transcriptions.create = AsyncMock(
             side_effect=openai.APIConnectionError(request=MagicMock())

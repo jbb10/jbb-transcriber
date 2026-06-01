@@ -16,7 +16,7 @@ from pathlib import Path
 
 import av
 
-from transcriber._exceptions import AudioFileError, ConversionError
+from jbb_transcriber._exceptions import AudioFileError, ConversionError
 
 logger = logging.getLogger(__name__)
 

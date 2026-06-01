@@ -16,11 +16,11 @@ class TestCLIBasicUsage:
         """transcribe input.mp3 output.txt works correctly."""
         # Set environment variables for the subprocess
         env = os.environ.copy()
-        env["TRANSCRIBER_API_KEY"] = litellm_config["api_key"]
-        env["TRANSCRIBER_BASE_URL"] = litellm_config["base_url"]
+        env["JBB_TRANSCRIBER_API_KEY"] = litellm_config["api_key"]
+        env["JBB_TRANSCRIBER_BASE_URL"] = litellm_config["base_url"]
 
         result = subprocess.run(
-            [sys.executable, "-m", "transcriber", short_audio_file, temp_output_file],
+            [sys.executable, "-m", "jbb_transcriber", short_audio_file, temp_output_file],
             env=env,
             capture_output=True,
             text=True,
@@ -41,8 +41,8 @@ class TestCLIBasicUsage:
     def test_cli_default_output(self, short_audio_file, litellm_config):
         """Output defaults to input filename with .txt extension."""
         env = os.environ.copy()
-        env["TRANSCRIBER_API_KEY"] = litellm_config["api_key"]
-        env["TRANSCRIBER_BASE_URL"] = litellm_config["base_url"]
+        env["JBB_TRANSCRIBER_API_KEY"] = litellm_config["api_key"]
+        env["JBB_TRANSCRIBER_BASE_URL"] = litellm_config["base_url"]
 
         # Copy audio to temp location to avoid polluting fixtures
         import shutil
@@ -54,7 +54,7 @@ class TestCLIBasicUsage:
             expected_output = os.path.join(temp_dir, "test_audio.txt")
 
             result = subprocess.run(
-                [sys.executable, "-m", "transcriber", temp_audio],
+                [sys.executable, "-m", "jbb_transcriber", temp_audio],
                 env=env,
                 capture_output=True,
                 text=True,
@@ -75,15 +75,15 @@ class TestCLIWithGlossary:
     ):
         """--glossary flag works correctly."""
         env = os.environ.copy()
-        env["TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
-        env["TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
-        env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
+        env["JBB_TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
+        env["JBB_TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
+        env["JBB_TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
         result = subprocess.run(
             [
                 sys.executable,
                 "-m",
-                "transcriber",
+                "jbb_transcriber",
                 short_audio_file,
                 temp_output_file,
                 "--glossary",
@@ -109,15 +109,15 @@ class TestCLIWithGlossary:
     ):
         """-g short flag for glossary works."""
         env = os.environ.copy()
-        env["TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
-        env["TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
-        env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
+        env["JBB_TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
+        env["JBB_TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
+        env["JBB_TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
         result = subprocess.run(
             [
                 sys.executable,
                 "-m",
-                "transcriber",
+                "jbb_transcriber",
                 short_audio_file,
                 temp_output_file,
                 "-g",
@@ -138,7 +138,7 @@ class TestCLIErrorHandling:
     def test_cli_missing_input_file(self):
         """CLI fails gracefully for missing input file."""
         result = subprocess.run(
-            [sys.executable, "-m", "transcriber", "/nonexistent/file.mp3", "output.txt"],
+            [sys.executable, "-m", "jbb_transcriber", "/nonexistent/file.mp3", "output.txt"],
             capture_output=True,
             text=True,
         )
@@ -148,14 +148,14 @@ class TestCLIErrorHandling:
     def test_cli_missing_glossary_file(self, short_audio_file, temp_output_file, litellm_config):
         """CLI fails gracefully for missing glossary file."""
         env = os.environ.copy()
-        env["TRANSCRIBER_API_KEY"] = litellm_config["api_key"]
-        env["TRANSCRIBER_BASE_URL"] = litellm_config["base_url"]
+        env["JBB_TRANSCRIBER_API_KEY"] = litellm_config["api_key"]
+        env["JBB_TRANSCRIBER_BASE_URL"] = litellm_config["base_url"]
 
         result = subprocess.run(
             [
                 sys.executable,
                 "-m",
-                "transcriber",
+                "jbb_transcriber",
                 short_audio_file,
                 temp_output_file,
                 "--glossary",
@@ -171,7 +171,7 @@ class TestCLIErrorHandling:
     def test_cli_help(self):
         """CLI --help works."""
         result = subprocess.run(
-            [sys.executable, "-m", "transcriber", "--help"],
+            [sys.executable, "-m", "jbb_transcriber", "--help"],
             capture_output=True,
             text=True,
         )
@@ -184,14 +184,14 @@ class TestCLIErrorHandling:
     def test_cli_parallel_workers_option(self, short_audio_file, temp_output_file, litellm_config):
         """--parallel-workers option is accepted."""
         env = os.environ.copy()
-        env["TRANSCRIBER_API_KEY"] = litellm_config["api_key"]
-        env["TRANSCRIBER_BASE_URL"] = litellm_config["base_url"]
+        env["JBB_TRANSCRIBER_API_KEY"] = litellm_config["api_key"]
+        env["JBB_TRANSCRIBER_BASE_URL"] = litellm_config["base_url"]
 
         result = subprocess.run(
             [
                 sys.executable,
                 "-m",
-                "transcriber",
+                "jbb_transcriber",
                 short_audio_file,
                 temp_output_file,
                 "--parallel-workers",
@@ -221,15 +221,15 @@ class TestCLIWithSynthesis:
             expected_synthesis = os.path.join(temp_dir, "test_audio_synthesis.md")
 
             env = os.environ.copy()
-            env["TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
-            env["TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
-            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
+            env["JBB_TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
+            env["JBB_TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
+            env["JBB_TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
                 [
                     sys.executable,
                     "-m",
-                    "transcriber",
+                    "jbb_transcriber",
                     temp_audio,
                     "--synthesise",
                 ],
@@ -261,15 +261,15 @@ class TestCLIWithSynthesis:
             expected_synthesis = os.path.join(temp_dir, "test_audio_synthesis.md")
 
             env = os.environ.copy()
-            env["TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
-            env["TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
-            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
+            env["JBB_TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
+            env["JBB_TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
+            env["JBB_TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
                 [
                     sys.executable,
                     "-m",
-                    "transcriber",
+                    "jbb_transcriber",
                     temp_audio,
                     "-s",
                 ],
@@ -298,15 +298,15 @@ class TestCLIWithSynthesis:
             expected_synthesis = os.path.join(temp_dir, "test_audio_synthesis.md")
 
             env = os.environ.copy()
-            env["TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
-            env["TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
-            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
+            env["JBB_TRANSCRIBER_API_KEY"] = azure_text_config["api_key"]
+            env["JBB_TRANSCRIBER_BASE_URL"] = azure_text_config["base_url"]
+            env["JBB_TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
                 [
                     sys.executable,
                     "-m",
-                    "transcriber",
+                    "jbb_transcriber",
                     temp_audio,
                     "--glossary",
                     sample_glossary,
@@ -346,13 +346,13 @@ class TestCLISynthesiseOnly:
             expected_synthesis = os.path.join(temp_dir, "meeting_synthesis.md")
 
             env = os.environ.copy()
-            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
+            env["JBB_TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
                 [
                     sys.executable,
                     "-m",
-                    "transcriber",
+                    "jbb_transcriber",
                     transcript_path,
                     "--synthesise-only",
                 ],
@@ -379,13 +379,13 @@ class TestCLISynthesiseOnly:
             expected_synthesis = os.path.join(temp_dir, "notes_synthesis.md")
 
             env = os.environ.copy()
-            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
+            env["JBB_TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
                 [
                     sys.executable,
                     "-m",
-                    "transcriber",
+                    "jbb_transcriber",
                     transcript_path,
                     "-S",
                 ],
@@ -408,13 +408,13 @@ class TestCLISynthesiseOnly:
                 f.write("")
 
             env = os.environ.copy()
-            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
+            env["JBB_TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
                 [
                     sys.executable,
                     "-m",
-                    "transcriber",
+                    "jbb_transcriber",
                     transcript_path,
                     "--synthesise-only",
                 ],
@@ -433,7 +433,7 @@ class TestCLISynthesiseOnly:
             [
                 sys.executable,
                 "-m",
-                "transcriber",
+                "jbb_transcriber",
                 "/nonexistent/transcript.txt",
                 "--synthesise-only",
             ],
@@ -454,7 +454,7 @@ class TestCLISynthesiseOnly:
                 [
                     sys.executable,
                     "-m",
-                    "transcriber",
+                    "jbb_transcriber",
                     transcript_path,
                     "--synthesise",
                     "--synthesise-only",
@@ -470,7 +470,7 @@ class TestCLISynthesiseOnly:
     def test_cli_help_shows_synthesise_only(self):
         """CLI --help mentions --synthesise-only."""
         result = subprocess.run(
-            [sys.executable, "-m", "transcriber", "--help"],
+            [sys.executable, "-m", "jbb_transcriber", "--help"],
             capture_output=True,
             text=True,
         )
@@ -495,10 +495,10 @@ class TestCLITextFileAutoDetection:
             expected_synthesis = os.path.join(temp_dir, "meeting_synthesis.md")
 
             env = os.environ.copy()
-            env["TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
+            env["JBB_TRANSCRIBER_TEXT_MODEL"] = azure_text_config["text_model"]
 
             result = subprocess.run(
-                [sys.executable, "-m", "transcriber", transcript_path],
+                [sys.executable, "-m", "jbb_transcriber", transcript_path],
                 env=env,
                 capture_output=True,
                 text=True,
@@ -517,12 +517,12 @@ class TestCLITextFileAutoDetection:
                 f.write("Some notes")
 
             env = os.environ.copy()
-            env["TRANSCRIBER_API_KEY"] = "test-key"
-            env["TRANSCRIBER_BASE_URL"] = "https://test.example.com"
-            env["TRANSCRIBER_TEXT_MODEL"] = "fake-text-model"
+            env["JBB_TRANSCRIBER_API_KEY"] = "test-key"
+            env["JBB_TRANSCRIBER_BASE_URL"] = "https://test.example.com"
+            env["JBB_TRANSCRIBER_TEXT_MODEL"] = "fake-text-model"
 
             result = subprocess.run(
-                [sys.executable, "-m", "transcriber", transcript_path],
+                [sys.executable, "-m", "jbb_transcriber", transcript_path],
                 env=env,
                 capture_output=True,
                 text=True,

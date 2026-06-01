@@ -77,10 +77,10 @@ transcribe meeting.txt --synthesise-only
 
 ```bash
 # Cloud transcription only
-uv tool install git+https://github.com/Deloitte-Nordics/transcriber.git
+uv tool install git+https://github.com/jbb10/jbb-transcriber.git
 
 # With local Whisper support (~1.5 GB for models + PyTorch)
-uv tool install "transcriber[local] @ git+https://github.com/Deloitte-Nordics/transcriber.git"
+uv tool install "jbb-transcriber[local] @ git+https://github.com/jbb10/jbb-transcriber.git"
 ```
 
 This installs `transcribe` as a global command available from anywhere.
@@ -89,37 +89,37 @@ This installs `transcribe` as a global command available from anywhere.
 
 ```bash
 # Add to your project (cloud transcription only)
-uv add "transcriber @ git+https://github.com/Deloitte-Nordics/transcriber.git"
+uv add "jbb-transcriber @ git+https://github.com/jbb10/jbb-transcriber.git"
 
 # With local Whisper support
-uv add "transcriber[local] @ git+https://github.com/Deloitte-Nordics/transcriber.git"
+uv add "jbb-transcriber[local] @ git+https://github.com/jbb10/jbb-transcriber.git"
 ```
 
 Or with pip:
 
 ```bash
-pip install "transcriber @ git+https://github.com/Deloitte-Nordics/transcriber.git"
+pip install "jbb-transcriber @ git+https://github.com/jbb10/jbb-transcriber.git"
 ```
 
 ### Run without installing (uvx)
 
 ```bash
-uvx --from git+https://github.com/Deloitte-Nordics/transcriber.git transcribe audio.mp3
+uvx --from git+https://github.com/jbb10/jbb-transcriber.git transcribe audio.mp3
 ```
 
 ## Library Usage
 
-Use transcriber as a dependency in your own Python programs:
+Use jbb-transcriber as a dependency in your own Python programs:
 
 ```python
-import transcriber
+import jbb_transcriber
 
 # Simple cloud transcription (reads API credentials from env vars)
-result = transcriber.transcribe_file("meeting.mp4")
+result = jbb_transcriber.transcribe_file("meeting.mp4")
 print(result.transcript)
 
 # With glossary correction and synthesis
-result = transcriber.transcribe_file(
+result = jbb_transcriber.transcribe_file(
     "meeting.mp4",
     glossary="terms.txt",
     synthesise=True,
@@ -128,17 +128,17 @@ print(result.transcript)
 print(result.synthesis)
 
 # Write output to files automatically
-result = transcriber.transcribe_file(
+result = jbb_transcriber.transcribe_file(
     "meeting.mp4",
     output="meeting.txt",
     synthesise=True,
 )
 
-# Local Whisper transcription (requires transcriber[local])
-result = transcriber.transcribe_file("meeting.mp4", local=True, model="medium")
+# Local Whisper transcription (requires the [local] extra)
+result = jbb_transcriber.transcribe_file("meeting.mp4", local=True, model="medium")
 
 # Synthesise an existing transcript
-synthesis = transcriber.synthesise_text("transcript text here...")
+synthesis = jbb_transcriber.synthesise_text("transcript text here...")
 ```
 
 ### Custom Backends (Dependency Injection)
@@ -146,14 +146,14 @@ synthesis = transcriber.synthesise_text("transcript text here...")
 Plug in your own transcription or LLM backends:
 
 ```python
-import transcriber
+import jbb_transcriber
 
 # Use explicit Azure credentials (no env vars needed)
-backend = transcriber.AzureTranscriptionBackend(
+backend = jbb_transcriber.AzureTranscriptionBackend(
     api_key="your-key",
     api_url="https://your-endpoint.openai.azure.com/...",
 )
-result = transcriber.transcribe_file("meeting.mp4", transcription_backend=backend)
+result = jbb_transcriber.transcribe_file("meeting.mp4", transcription_backend=backend)
 
 # Or implement the Protocol for a custom provider
 class MyTranscriptionBackend:
@@ -161,7 +161,7 @@ class MyTranscriptionBackend:
         # Your custom transcription logic
         ...
 
-result = transcriber.transcribe_file("meeting.mp4", transcription_backend=MyTranscriptionBackend())
+result = jbb_transcriber.transcribe_file("meeting.mp4", transcription_backend=MyTranscriptionBackend())
 ```
 
 ### Return Types
@@ -181,17 +181,17 @@ class TranscriptionResult:
 All errors are typed exceptions:
 
 ```python
-import transcriber
+import jbb_transcriber
 
 try:
-    result = transcriber.transcribe_file("meeting.mp4")
-except transcriber.ConfigurationError as e:
+    result = jbb_transcriber.transcribe_file("meeting.mp4")
+except jbb_transcriber.ConfigurationError as e:
     print(f"Config issue: {e.errors}")
-except transcriber.AudioFileError as e:
+except jbb_transcriber.AudioFileError as e:
     print(f"File issue: {e} (path: {e.path})")
-except transcriber.TranscriptionError as e:
+except jbb_transcriber.TranscriptionError as e:
     print(f"API issue: {e}")
-except transcriber.TranscriberError as e:
+except jbb_transcriber.TranscriberError as e:
     print(f"General error: {e}")
 ```
 
@@ -206,8 +206,8 @@ This tool connects to any **OpenAI-compatible API**. You will need:
 2. **API key:** Both transcription and text endpoints use the key for your API.
 
 3. **Model names:** Specify the model name as exposed by the API:
-   - `TRANSCRIBER_MODEL` — model for audio transcription (e.g., `gpt-4o-transcribe`)
-   - `TRANSCRIBER_TEXT_MODEL` — model for glossary correction and synthesis (e.g., `gpt-4o`)
+   - `JBB_TRANSCRIBER_MODEL` — model for audio transcription (e.g., `gpt-4o-transcribe`)
+   - `JBB_TRANSCRIBER_TEXT_MODEL` — model for glossary correction and synthesis (e.g., `gpt-4o`)
 
 ### Environment Variables
 
@@ -215,13 +215,13 @@ Add the following environment variables to your `~/.zshrc` file:
 
 ```bash
 # API credentials
-# TRANSCRIBER_* takes priority; falls back to OPENAI_API_KEY / OPENAI_BASE_URL
-export TRANSCRIBER_API_KEY="your-api-key"
-export TRANSCRIBER_BASE_URL="https://your-endpoint/v1"
+# JBB_TRANSCRIBER_* takes priority; falls back to OPENAI_API_KEY / OPENAI_BASE_URL
+export JBB_TRANSCRIBER_API_KEY="your-api-key"
+export JBB_TRANSCRIBER_BASE_URL="https://your-endpoint/v1"
 
 # Model names
-export TRANSCRIBER_MODEL="your-transcription-model-name"
-export TRANSCRIBER_TEXT_MODEL="your-text-model-name"  # only needed for --glossary / --synthesise
+export JBB_TRANSCRIBER_MODEL="your-transcription-model-name"
+export JBB_TRANSCRIBER_TEXT_MODEL="your-text-model-name"  # only needed for --glossary / --synthesise
 ```
 
 Replace:
@@ -230,7 +230,7 @@ Replace:
 - `your-transcription-model-name` with the model name for transcription (e.g., `gpt-4o-transcribe`)
 - `your-text-model-name` with the model name for glossary/synthesis (e.g., `gpt-4o`)
 
-> **Tip:** If `TRANSCRIBER_API_KEY` / `TRANSCRIBER_BASE_URL` are not set, the tool falls back to the standard `OPENAI_API_KEY` and `OPENAI_BASE_URL` environment variables.
+> **Tip:** If `JBB_TRANSCRIBER_API_KEY` / `JBB_TRANSCRIBER_BASE_URL` are not set, the tool falls back to the standard `OPENAI_API_KEY` and `OPENAI_BASE_URL` environment variables.
 
 Then reload your shell configuration:
 
@@ -240,7 +240,7 @@ source ~/.zshrc
 
 ## Local Transcription Mode
 
-> **Requires the `[local]` extra:** Install with `uv tool install "transcriber[local] @ ..."` or `uv add "transcriber[local] @ ..."`.
+> **Requires the `[local]` extra:** Install with `uv tool install "jbb-transcriber[local] @ ..."` or `uv add "jbb-transcriber[local] @ ..."`.
 
 Use the `--local` flag to transcribe audio offline using OpenAI's Whisper model. No API credentials are needed for transcription (though glossary correction and synthesis still require API credentials).
 
@@ -337,7 +337,7 @@ transcribe meeting.txt -S
 
 This reads the transcript file and creates `meeting_synthesis.md` — no audio processing or transcription credentials are needed.
 
-> **Note:** Synthesis requires API credentials (`TRANSCRIBER_API_KEY` and `TRANSCRIBER_BASE_URL`), even when using `--local` for transcription or `--synthesise-only`.
+> **Note:** Synthesis requires API credentials (`JBB_TRANSCRIBER_API_KEY` and `JBB_TRANSCRIBER_BASE_URL`), even when using `--local` for transcription or `--synthesise-only`.
 
 ## Output Format
 

@@ -2,22 +2,22 @@
 
 Use as a library::
 
-    import transcriber
+    import jbb_transcriber
 
     # Async API (primary)
-    result = await transcriber.transcribe(
+    result = await jbb_transcriber.transcribe(
         "meeting.mp4",
         transcription_backend=my_backend,
     )
 
     # Sync convenience wrapper
-    result = transcriber.transcribe_file(
+    result = jbb_transcriber.transcribe_file(
         "meeting.mp4",
         transcription_backend=my_backend,
     )
 
     # Synthesise an existing transcript
-    synthesis = await transcriber.synthesise_transcript(
+    synthesis = await jbb_transcriber.synthesise_transcript(
         "transcript text...", llm_backend=my_llm,
     )
 
@@ -36,7 +36,7 @@ import os
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
-from transcriber._exceptions import (
+from jbb_transcriber._exceptions import (
     AudioFileError,
     ConfigurationError,
     ConversionError,
@@ -47,17 +47,17 @@ from transcriber._exceptions import (
     TranscriberError,
     TranscriptionError,
 )
-from transcriber._pipeline import synthesise_transcript, transcribe
-from transcriber._prompts import build_correction_prompt, build_synthesis_prompt
-from transcriber._protocols import LLMBackend, TranscriptionBackend
-from transcriber._settings import (
+from jbb_transcriber._pipeline import synthesise_transcript, transcribe
+from jbb_transcriber._prompts import build_correction_prompt, build_synthesis_prompt
+from jbb_transcriber._protocols import LLMBackend, TranscriptionBackend
+from jbb_transcriber._settings import (
     AzureLLMSettings,
     AzureTranscriptionSettings,
     PipelineSettings,
     WhisperSettings,
 )
-from transcriber._types import ChunkResult, CorrectionResult, TranscriptionResult
-from transcriber.backends import (
+from jbb_transcriber._types import ChunkResult, CorrectionResult, TranscriptionResult
+from jbb_transcriber.backends import (
     AzureLLMBackend,
     AzureTranscriptionBackend,
     WhisperTranscriptionBackend,
@@ -71,7 +71,7 @@ from transcriber.backends import (
 try:
     from importlib.metadata import version as _meta_version
 
-    __version__ = _meta_version("transcriber")
+    __version__ = _meta_version("jbb-transcriber")
 except Exception:  # pragma: no cover — editable installs may not have metadata
     __version__ = "0.0.0-dev"
 
@@ -102,7 +102,7 @@ def _run_sync(coro: Coroutine[Any, Any, _T]) -> _T:
     else:
         raise RuntimeError(
             "transcribe_file() cannot be called from an async context. "
-            "Use 'await transcriber.transcribe(...)' instead."
+            "Use 'await jbb_transcriber.transcribe(...)' instead."
         )
     return asyncio.run(coro)
 

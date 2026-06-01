@@ -1,6 +1,13 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+
+## [5.0.0] - 2026-06-01
+
+### Refactoring
+- Rename project to `jbb-transcriber`; import package is now `jbb_transcriber` (**BREAKING**)
+- Rename environment variables `TRANSCRIBER_*` to `JBB_TRANSCRIBER_*` (**BREAKING**)
+
 ## [4.0.1] - 2026-03-22
 
 ### Bug Fixes

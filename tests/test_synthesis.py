@@ -2,8 +2,8 @@
 Tests for transcript synthesis functionality.
 """
 
-from transcriber._pipeline import synthesise_transcript
-from transcriber._prompts import build_synthesis_prompt
+from jbb_transcriber._pipeline import synthesise_transcript
+from jbb_transcriber._prompts import build_synthesis_prompt
 
 
 class TestSynthesisPrompt:

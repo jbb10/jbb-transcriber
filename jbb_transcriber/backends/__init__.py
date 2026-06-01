@@ -1,17 +1,17 @@
 """Backend package — provider-specific transcription and LLM implementations.
 
-All backends implement the protocols defined in ``transcriber._protocols``.
+All backends implement the protocols defined in ``jbb_transcriber._protocols``.
 """
 
 from __future__ import annotations
 
-from transcriber.backends._azure import (
+from jbb_transcriber.backends._azure import (
     AzureLLMBackend,
     AzureTranscriptionBackend,
     create_azure_llm_backend,
     create_azure_transcription_backend,
 )
-from transcriber.backends._whisper import (
+from jbb_transcriber.backends._whisper import (
     WhisperTranscriptionBackend,
     format_whisper_output,
 )

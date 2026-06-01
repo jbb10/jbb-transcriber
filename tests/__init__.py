@@ -1,1 +1,1 @@
-# Tests package for transcriber
+# Tests package for jbb_transcriber

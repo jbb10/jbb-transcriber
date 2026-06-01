@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Release script for transcriber
+# Release script for jbb-transcriber
 # Usage: ./scripts/release.sh [--patch|--minor|--major] [--yes]
 #
 # Automatically determines version bump from conventional commits:
@@ -10,9 +10,9 @@
 #   feat!: / fix!:    → major (X.0.0)
 #
 # Users install via:
-#   uv tool install git+https://github.com/Deloitte-Nordics/transcriber.git
-#   uv tool install "transcriber[local] @ git+https://github.com/Deloitte-Nordics/transcriber.git"
-#   uv add "transcriber @ git+https://github.com/Deloitte-Nordics/transcriber.git@v1.0.0"
+#   uv tool install git+https://github.com/jbb10/jbb-transcriber.git
+#   uv tool install "jbb-transcriber[local] @ git+https://github.com/jbb10/jbb-transcriber.git"
+#   uv add "jbb-transcriber @ git+https://github.com/jbb10/jbb-transcriber.git@v1.0.0"
 #
 
 set -euo pipefail
@@ -250,6 +250,6 @@ echo ""
 info "Successfully released v$NEW_VERSION!"
 echo ""
 echo "Install with:"
-echo "  uv tool install git+https://github.com/Deloitte-Nordics/transcriber.git                          # CLI (cloud only)"
-echo "  uv tool install \"transcriber[local] @ git+https://github.com/Deloitte-Nordics/transcriber.git\"   # CLI (with local Whisper)"
-echo "  uv add \"transcriber @ git+https://github.com/Deloitte-Nordics/transcriber.git@v$NEW_VERSION\"     # library (pinned)"
+echo "  uv tool install git+https://github.com/jbb10/jbb-transcriber.git                                # CLI (cloud only)"
+echo "  uv tool install \"jbb-transcriber[local] @ git+https://github.com/jbb10/jbb-transcriber.git\"     # CLI (with local Whisper)"
+echo "  uv add \"jbb-transcriber @ git+https://github.com/jbb10/jbb-transcriber.git@v$NEW_VERSION\"       # library (pinned)"

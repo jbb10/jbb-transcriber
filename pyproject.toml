@@ -3,8 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "transcriber"
-version = "4.0.1"
+name = "jbb-transcriber"
+version = "5.0.0"
 description = "Audio transcription library and CLI tool using Azure OpenAI with speaker diarization"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/Deloitte-Nordics/transcriber"
+Repository = "https://github.com/jbb10/jbb-transcriber"
 
 [project.optional-dependencies]
 local = [
@@ -38,14 +38,14 @@ dev = [
 ]
 
 [project.scripts]
-transcribe = "transcriber.cli:main"
+transcribe = "jbb_transcriber.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["transcriber"]
+packages = ["jbb_transcriber"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "transcriber/",
+    "jbb_transcriber/",
     "README.md",
     "pyproject.toml",
 ]
@@ -54,7 +54,7 @@ include = [
 pythonVersion = "3.10"
 pythonPlatform = "All"
 typeCheckingMode = "strict"
-include = ["transcriber"]
+include = ["jbb_transcriber"]
 exclude = ["tests", "**/__pycache__"]
 
 [tool.ruff]
@@ -76,7 +76,7 @@ select = [
 ignore = []
 
 [tool.ruff.lint.isort]
-known-first-party = ["transcriber"]
+known-first-party = ["jbb_transcriber"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

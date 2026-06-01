@@ -8,8 +8,8 @@ import httpx
 import openai
 import pytest
 
-from transcriber._exceptions import LLMError, TranscriptionError
-from transcriber._retry import (
+from jbb_transcriber._exceptions import LLMError, TranscriptionError
+from jbb_transcriber._retry import (
     _extract_retry_after,
     is_transient_http_error,
     retry_with_backoff,
@@ -123,7 +123,7 @@ class TestRetryWithBackoff:
         assert result == "ok"
         assert fn.call_count == 1
 
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_success_after_transient_failure(self, mock_sleep: AsyncMock) -> None:
         fn = AsyncMock(side_effect=[ValueError("transient"), "ok"])
         result = await retry_with_backoff(
@@ -136,7 +136,7 @@ class TestRetryWithBackoff:
         assert fn.call_count == 2
         mock_sleep.assert_called_once()
 
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_all_retries_exhausted(self, mock_sleep: AsyncMock) -> None:
         exc = ValueError("persistent")
         fn = AsyncMock(side_effect=exc)
@@ -152,7 +152,7 @@ class TestRetryWithBackoff:
         assert fn.call_count == 3
         assert mock_sleep.call_count == 2  # backoff before attempts 2 and 3
 
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_should_retry_false_stops_immediately(self, mock_sleep: AsyncMock) -> None:
         """Permanent errors are not retried when should_retry returns False."""
         exc = ValueError("permanent")
@@ -170,7 +170,7 @@ class TestRetryWithBackoff:
         assert fn.call_count == 1
         mock_sleep.assert_not_called()
 
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_should_retry_true_allows_retries(self, mock_sleep: AsyncMock) -> None:
         fn = AsyncMock(side_effect=[ValueError("t1"), ValueError("t2"), "ok"])
         result = await retry_with_backoff(
@@ -183,8 +183,8 @@ class TestRetryWithBackoff:
         assert result == "ok"
         assert fn.call_count == 3
 
-    @patch("transcriber._retry.random.uniform", return_value=1.0)
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.random.uniform", return_value=1.0)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_jitter_disabled_uses_exact_backoff(
         self, mock_sleep: AsyncMock, mock_uniform: MagicMock
     ) -> None:
@@ -201,8 +201,8 @@ class TestRetryWithBackoff:
         # Sleep should be called with exactly base_delay * 2^0 = 2.0
         mock_sleep.assert_called_once_with(2.0)
 
-    @patch("transcriber._retry.random.uniform", return_value=1.5)
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.random.uniform", return_value=1.5)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_jitter_enabled_varies_delay(
         self, mock_sleep: AsyncMock, mock_uniform: MagicMock
     ) -> None:
@@ -218,7 +218,7 @@ class TestRetryWithBackoff:
         # base_delay * 2^0 * 1.5 = 3.0
         mock_sleep.assert_called_once_with(3.0)
 
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_retry_after_header_respected(self, mock_sleep: AsyncMock) -> None:
         request = httpx.Request("POST", "https://example.com")
         response = httpx.Response(429, request=request, headers={"Retry-After": "10"})
@@ -236,12 +236,12 @@ class TestRetryWithBackoff:
         # max(base_delay=2.0, retry_after=10.0) = 10.0
         mock_sleep.assert_called_once_with(10.0)
 
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_final_failure_logged_at_error(
         self, mock_sleep: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         fn = AsyncMock(side_effect=ValueError("boom"))
-        with caplog.at_level("ERROR", logger="transcriber._retry"):
+        with caplog.at_level("ERROR", logger="jbb_transcriber._retry"):
             with pytest.raises(ValueError, match="boom"):
                 await retry_with_backoff(
                     fn,
@@ -252,12 +252,12 @@ class TestRetryWithBackoff:
 
         assert any("my_op failed after 2 attempts" in r.message for r in caplog.records)
 
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_non_retryable_error_logged_at_error(
         self, mock_sleep: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
         fn = AsyncMock(side_effect=ValueError("auth"))
-        with caplog.at_level("ERROR", logger="transcriber._retry"):
+        with caplog.at_level("ERROR", logger="jbb_transcriber._retry"):
             with pytest.raises(ValueError, match="auth"):
                 await retry_with_backoff(
                     fn,
@@ -269,7 +269,7 @@ class TestRetryWithBackoff:
 
         assert any("non-retryable error" in r.message for r in caplog.records)
 
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_http_status_logged_in_warning(
         self, mock_sleep: AsyncMock, caplog: pytest.LogCaptureFixture
     ) -> None:
@@ -279,7 +279,7 @@ class TestRetryWithBackoff:
         exc = httpx.HTTPStatusError("error", request=request, response=response)
 
         fn = AsyncMock(side_effect=[exc, "ok"])
-        with caplog.at_level("WARNING", logger="transcriber._retry"):
+        with caplog.at_level("WARNING", logger="jbb_transcriber._retry"):
             await retry_with_backoff(
                 fn,
                 max_retries=2,
@@ -332,12 +332,12 @@ class TestRetryIntegration:
         client.chat.completions.create = AsyncMock(side_effect=side_effects)
         return client
 
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_transcription_retries_on_503(self, mock_sleep: AsyncMock) -> None:
         """503 errors from backend are retried via retry_with_backoff."""
         import tempfile
 
-        from transcriber.backends import create_azure_transcription_backend
+        from jbb_transcriber.backends import create_azure_transcription_backend
 
         exc_503 = self._make_openai_status_error(503, "Service Unavailable")
 
@@ -367,12 +367,12 @@ class TestRetryIntegration:
         assert result == "Hello world"
         assert mock_client.audio.transcriptions.create.await_count == 3
 
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_transcription_no_retry_on_401(self, mock_sleep: AsyncMock) -> None:
         """401 errors from backend are not retried (permanent)."""
         import tempfile
 
-        from transcriber.backends import create_azure_transcription_backend
+        from jbb_transcriber.backends import create_azure_transcription_backend
 
         exc_401 = self._make_openai_status_error(401, "Unauthorized")
 
@@ -393,10 +393,10 @@ class TestRetryIntegration:
         assert exc_info.value.status_code == 401
         assert mock_client.audio.transcriptions.create.await_count == 1
 
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_llm_retries_on_429(self, mock_sleep: AsyncMock) -> None:
         """429 errors from LLM backend are retried."""
-        from transcriber.backends import create_azure_llm_backend
+        from jbb_transcriber.backends import create_azure_llm_backend
 
         exc_429 = self._make_openai_status_error(429, "Too Many Requests")
 
@@ -426,10 +426,10 @@ class TestRetryIntegration:
         assert result == "corrected text"
         assert mock_client.chat.completions.create.await_count == 2
 
-    @patch("transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
+    @patch("jbb_transcriber._retry.asyncio.sleep", new_callable=AsyncMock)
     async def test_llm_no_retry_on_400(self, mock_sleep: AsyncMock) -> None:
         """400 errors from LLM backend are not retried."""
-        from transcriber.backends import create_azure_llm_backend
+        from jbb_transcriber.backends import create_azure_llm_backend
 
         exc_400 = self._make_openai_status_error(400, "Bad Request")
 

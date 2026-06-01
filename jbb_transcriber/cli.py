@@ -1,8 +1,8 @@
-"""Command-line interface for the transcriber.
+"""Command-line interface for the jbb_transcriber.
 
 This module is the **only** place that calls ``sys.exit()``, touches
 ``argparse``, or configures logging output formatting.  All business
-logic is accessed through the public ``transcriber`` package API.
+logic is accessed through the public ``jbb_transcriber`` package API.
 """
 
 from __future__ import annotations
@@ -16,14 +16,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-import transcriber
-from transcriber._settings import (
+import jbb_transcriber
+from jbb_transcriber._settings import (
     AzureLLMSettings,
     AzureTranscriptionSettings,
     PipelineSettings,
     WhisperSettings,
 )
-from transcriber.backends import (
+from jbb_transcriber.backends import (
     AzureLLMBackend,
     AzureTranscriptionBackend,
     WhisperTranscriptionBackend,
@@ -74,7 +74,7 @@ class _CLIFormatter(logging.Formatter):
 
 def _setup_cli_logging() -> None:
     """Configure logging to emit to stderr with the CLI timestamp format."""
-    root = logging.getLogger("transcriber")
+    root = logging.getLogger("jbb_transcriber")
     if not any(
         isinstance(h, logging.StreamHandler) and not isinstance(h, logging.NullHandler)
         for h in root.handlers
@@ -155,7 +155,7 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
     Raises:
         ConfigurationError: If any validation fails.
     """
-    from transcriber._audio import is_text_file, log_audio_file_info, probe_audio_stream
+    from jbb_transcriber._audio import is_text_file, log_audio_file_info, probe_audio_stream
 
     errors: list[str] = []
 
@@ -222,8 +222,8 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
             errors.append(f"Glossary path is not a file: {glossary_path}")
 
     # --- Environment variables ---
-    # Credentials: TRANSCRIBER_* overrides OPENAI_* (per-app spend tracking)
-    from transcriber._settings import resolve_api_key, resolve_base_url
+    # Credentials: JBB_TRANSCRIBER_* overrides OPENAI_* (per-app spend tracking)
+    from jbb_transcriber._settings import resolve_api_key, resolve_base_url
 
     api_key: str = ""
     base_url: str = ""
@@ -242,31 +242,31 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
 
         if not _api_key:
             errors.append(
-                "Neither TRANSCRIBER_API_KEY nor OPENAI_API_KEY is set. "
-                'Add to ~/.zshrc: export TRANSCRIBER_API_KEY="your-litellm-key"'
+                "Neither JBB_TRANSCRIBER_API_KEY nor OPENAI_API_KEY is set. "
+                'Add to ~/.zshrc: export JBB_TRANSCRIBER_API_KEY="your-litellm-key"'
             )
         else:
             api_key = _api_key
 
         if not _base_url:
             errors.append(
-                "Neither TRANSCRIBER_BASE_URL nor OPENAI_BASE_URL is set. "
-                'Add to ~/.zshrc: export TRANSCRIBER_BASE_URL="https://your-proxy.example.com/v1"'
+                "Neither JBB_TRANSCRIBER_BASE_URL nor OPENAI_BASE_URL is set. "
+                'Add to ~/.zshrc: export JBB_TRANSCRIBER_BASE_URL="https://your-proxy.example.com/v1"'
             )
         else:
             base_url = _base_url
 
     if not local and not synthesise_only:
-        _transcribe_model = os.getenv("TRANSCRIBER_MODEL")
+        _transcribe_model = os.getenv("JBB_TRANSCRIBER_MODEL")
         if not _transcribe_model:
             errors.append(
-                "TRANSCRIBER_MODEL environment variable is not set. "
-                'Add to ~/.zshrc: export TRANSCRIBER_MODEL="your-transcription-model-name"'
+                "JBB_TRANSCRIBER_MODEL environment variable is not set. "
+                'Add to ~/.zshrc: export JBB_TRANSCRIBER_MODEL="your-transcription-model-name"'
             )
         else:
             transcribe_model = _transcribe_model
     elif not local:
-        transcribe_model = os.getenv("TRANSCRIBER_MODEL", "")
+        transcribe_model = os.getenv("JBB_TRANSCRIBER_MODEL", "")
 
     if require_text_features:
         if glossary:
@@ -276,11 +276,12 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
         else:
             feature = "--synthesise"
 
-        _text_model = os.getenv("TRANSCRIBER_TEXT_MODEL")
+        _text_model = os.getenv("JBB_TRANSCRIBER_TEXT_MODEL")
         if not _text_model:
             errors.append(
-                f"TRANSCRIBER_TEXT_MODEL environment variable is not set (required for {feature}). "
-                'Add to ~/.zshrc: export TRANSCRIBER_TEXT_MODEL="your-text-model-name"'
+                "JBB_TRANSCRIBER_TEXT_MODEL environment variable is not set "
+                f"(required for {feature}). "
+                'Add to ~/.zshrc: export JBB_TRANSCRIBER_TEXT_MODEL="your-text-model-name"'
             )
         else:
             text_model = _text_model
@@ -292,12 +293,12 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
         except ImportError:
             errors.append(
                 "openai-whisper is not installed (required for --local mode). "
-                'Install with: uv tool install "transcriber[local]"'
+                'Install with: uv tool install "jbb-transcriber[local]"'
             )
 
     # --- Raise all errors at once ---
     if errors:
-        raise transcriber.ConfigurationError(errors)
+        raise jbb_transcriber.ConfigurationError(errors)
 
     # --- Load glossary text (validation passed) ---
     if glossary_path:
@@ -305,7 +306,7 @@ def validate_cli_config(  # noqa: C901 — complexity is inherent to validation
             glossary_text = glossary_path.read_text(encoding="utf-8")
             logger.debug("Loaded glossary from: %s", glossary_path)
         except OSError as e:
-            raise transcriber.ConfigurationError([f"Could not read glossary file: {e}"]) from e
+            raise jbb_transcriber.ConfigurationError([f"Could not read glossary file: {e}"]) from e
 
     # Log audio file info
     if not synthesise_only:
@@ -362,7 +363,7 @@ def _write_output(text: str, output_file_path: str) -> None:
             f.write(text)
         logger.info("Saved to: %s", output_file_path)
     except OSError as e:
-        raise transcriber.TranscriberError(f"Could not write to output file: {e}") from e
+        raise jbb_transcriber.TranscriberError(f"Could not write to output file: {e}") from e
 
 
 # ---------------------------------------------------------------------------
@@ -402,14 +403,14 @@ async def _run_async(validated: ValidatedConfig) -> None:
         transcript_text = validated.audio_file.read_text(encoding="utf-8")
 
         if not transcript_text.strip():
-            raise transcriber.ConfigurationError(["Transcript file is empty"])
+            raise jbb_transcriber.ConfigurationError(["Transcript file is empty"])
 
         if llm_backend is None:
-            raise transcriber.ConfigurationError(["LLM backend required for synthesis"])
+            raise jbb_transcriber.ConfigurationError(["LLM backend required for synthesis"])
 
         logger.info("Generating synthesis document...")
         try:
-            synthesis = await transcriber.synthesise_transcript(
+            synthesis = await jbb_transcriber.synthesise_transcript(
                 transcript_text, llm_backend=llm_backend, settings=pipeline_settings
             )
             output_stem = validated.audio_file.with_suffix("")
@@ -420,7 +421,7 @@ async def _run_async(validated: ValidatedConfig) -> None:
         return
 
     # --- Normal transcription ---
-    transcription_backend: transcriber.TranscriptionBackend
+    transcription_backend: jbb_transcriber.TranscriptionBackend
     if validated.local_mode:
         whisper_settings = WhisperSettings(model_name=validated.whisper_model)
         transcription_backend = WhisperTranscriptionBackend(settings=whisper_settings)
@@ -439,7 +440,7 @@ async def _run_async(validated: ValidatedConfig) -> None:
             completed.append(chunk_idx)
             logger.info("Chunk %d/%d complete", len(completed), total)
 
-        await transcriber.transcribe(
+        await jbb_transcriber.transcribe(
             str(validated.audio_file),
             output=str(validated.output_file),
             glossary=str(validated.glossary) if validated.glossary else None,
@@ -449,7 +450,7 @@ async def _run_async(validated: ValidatedConfig) -> None:
             settings=pipeline_settings,
             on_chunk_complete=_on_chunk_done,
         )
-    except transcriber.SynthesisError as e:
+    except jbb_transcriber.SynthesisError as e:
         logger.warning("%s", e)
         logger.warning("Transcript was saved successfully, but synthesis could not be generated.")
     finally:
@@ -475,12 +476,12 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Environment Variables:
-  TRANSCRIBER_API_KEY         LiteLLM virtual key (overrides OPENAI_API_KEY)
-  OPENAI_API_KEY              Fallback API key if TRANSCRIBER_API_KEY is not set
-  TRANSCRIBER_BASE_URL        LiteLLM proxy base URL (overrides OPENAI_BASE_URL)
-  OPENAI_BASE_URL             Fallback base URL if TRANSCRIBER_BASE_URL is not set
-  TRANSCRIBER_MODEL           Model name for transcription (e.g., gpt-4o-transcribe)
-  TRANSCRIBER_TEXT_MODEL      Model name for text LLM
+  JBB_TRANSCRIBER_API_KEY         LiteLLM virtual key (overrides OPENAI_API_KEY)
+  OPENAI_API_KEY              Fallback API key if JBB_TRANSCRIBER_API_KEY is not set
+  JBB_TRANSCRIBER_BASE_URL        LiteLLM proxy base URL (overrides OPENAI_BASE_URL)
+  OPENAI_BASE_URL             Fallback base URL if JBB_TRANSCRIBER_BASE_URL is not set
+  JBB_TRANSCRIBER_MODEL           Model name for transcription (e.g., gpt-4o-transcribe)
+  JBB_TRANSCRIBER_TEXT_MODEL      Model name for text LLM
                               (required with --glossary, --synthesise, or --synthesise-only)
 
 Example:
@@ -558,7 +559,7 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
         "-l",
         action="store_true",
         help="Use local Whisper model instead of Azure OpenAI "
-        "(requires openai-whisper: uv tool install 'transcriber[local]')",
+        "(requires openai-whisper: uv tool install 'jbb_transcriber[local]')",
     )
 
     parser.add_argument(
@@ -607,10 +608,10 @@ Note: Files longer than 25 minutes will be automatically split into chunks.
             provider=args.provider,
         )
         _run(validated)
-    except transcriber.ConfigurationError as e:
+    except jbb_transcriber.ConfigurationError as e:
         for err in e.errors:
             logger.error("Error: %s", err)
         sys.exit(1)
-    except transcriber.TranscriberError as e:
+    except jbb_transcriber.TranscriberError as e:
         logger.error("Error: %s", e)
         sys.exit(1)

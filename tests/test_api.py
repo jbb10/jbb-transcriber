@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import transcriber
-from transcriber import (
+import jbb_transcriber
+from jbb_transcriber import (
     AudioFileError,
     ConfigurationError,
     TranscriptionResult,
@@ -150,13 +150,13 @@ class TestPublicExports:
 
     def test_all_exports_are_accessible(self):
         """All items in __all__ are importable."""
-        for name in transcriber.__all__:
-            assert hasattr(transcriber, name), f"{name} listed in __all__ but not accessible"
+        for name in jbb_transcriber.__all__:
+            assert hasattr(jbb_transcriber, name), f"{name} listed in __all__ but not accessible"
 
     def test_version_is_string(self):
         """__version__ is a string."""
-        assert isinstance(transcriber.__version__, str)
-        assert len(transcriber.__version__) > 0
+        assert isinstance(jbb_transcriber.__version__, str)
+        assert len(jbb_transcriber.__version__) > 0
 
     def test_transcription_result_fields(self):
         """TranscriptionResult has expected fields."""

@@ -3,7 +3,7 @@
 
 ## Project Configuration
 
-- **Project**: transcriber
+- **Project**: jbb-transcriber
 - **User**: Jbjornsson
 - **Communication Language**: English
 - **Document Output Language**: English

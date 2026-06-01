@@ -15,20 +15,20 @@ from pathlib import Path
 
 import httpx
 
-from transcriber._audio import get_audio_duration
-from transcriber._exceptions import (
+from jbb_transcriber._audio import get_audio_duration
+from jbb_transcriber._exceptions import (
     AudioFileError,
     LLMError,
     SynthesisError,
     TranscriberError,
     TranscriptionError,
 )
-from transcriber._prompts import build_correction_prompt, build_synthesis_prompt
-from transcriber._protocols import LLMBackend, TranscriptionBackend
-from transcriber._retry import is_transient_http_error, retry_with_backoff
-from transcriber._security import validate_input_size
-from transcriber._settings import PipelineSettings
-from transcriber._types import ChunkResult, CorrectionResult, TranscriptionResult
+from jbb_transcriber._prompts import build_correction_prompt, build_synthesis_prompt
+from jbb_transcriber._protocols import LLMBackend, TranscriptionBackend
+from jbb_transcriber._retry import is_transient_http_error, retry_with_backoff
+from jbb_transcriber._security import validate_input_size
+from jbb_transcriber._settings import PipelineSettings
+from jbb_transcriber._types import ChunkResult, CorrectionResult, TranscriptionResult
 
 logger = logging.getLogger(__name__)
 
@@ -334,7 +334,7 @@ def _open_converted_audio(file_path: str) -> tuple[str, str | None]:
     Uses the ``converted_audio`` context manager internally, but we need
     to split open/close for the async pipeline.
     """
-    from transcriber._audio import API_NO_CONVERSION, convert_to_m4a
+    from jbb_transcriber._audio import API_NO_CONVERSION, convert_to_m4a
 
     file_ext = Path(file_path).suffix.lower()
     if file_ext in API_NO_CONVERSION:
@@ -346,7 +346,7 @@ def _open_converted_audio(file_path: str) -> tuple[str, str | None]:
 
 def _open_split_audio(file_path: str, chunk_duration: int) -> tuple[list[str], str]:
     """Split audio and return (chunks, temp_dir)."""
-    from transcriber._audio import split_audio_file
+    from jbb_transcriber._audio import split_audio_file
 
     return split_audio_file(file_path, chunk_duration)
 

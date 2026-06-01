@@ -14,9 +14,9 @@ from typing import Any, cast
 import openai
 from openai.types.chat import ChatCompletion
 
-from transcriber._exceptions import LLMError, TranscriptionError
-from transcriber._security import validate_https_url
-from transcriber._settings import AzureLLMSettings, AzureTranscriptionSettings
+from jbb_transcriber._exceptions import LLMError, TranscriptionError
+from jbb_transcriber._security import validate_https_url
+from jbb_transcriber._settings import AzureLLMSettings, AzureTranscriptionSettings
 
 logger = logging.getLogger(__name__)
 

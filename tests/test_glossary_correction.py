@@ -4,8 +4,8 @@ Tests for glossary-based transcript correction.
 
 import re
 
-from transcriber._pipeline import _correct_with_glossary
-from transcriber._settings import PipelineSettings
+from jbb_transcriber._pipeline import _correct_with_glossary
+from jbb_transcriber._settings import PipelineSettings
 
 
 class TestGlossaryCorrection:

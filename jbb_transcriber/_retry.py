@@ -10,7 +10,7 @@ from typing import TypeVar
 
 import httpx
 
-from transcriber._exceptions import LLMError, TranscriptionError
+from jbb_transcriber._exceptions import LLMError, TranscriptionError
 
 _T = TypeVar("_T")
 

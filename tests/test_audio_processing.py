@@ -7,7 +7,7 @@ import tempfile
 
 import pytest
 
-from transcriber._audio import (
+from jbb_transcriber._audio import (
     converted_audio,
     get_audio_duration,
     split_audio,

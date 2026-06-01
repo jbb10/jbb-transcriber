@@ -12,7 +12,7 @@ import re
 from importlib.resources import files as pkg_files
 from pathlib import Path
 
-from transcriber._exceptions import PromptError
+from jbb_transcriber._exceptions import PromptError
 
 
 def _load_prompt(filename: str) -> str:
@@ -28,7 +28,7 @@ def _load_prompt(filename: str) -> str:
         PromptError: If the template cannot be loaded.
     """
     try:
-        return pkg_files("transcriber").joinpath(filename).read_text(encoding="utf-8")
+        return pkg_files("jbb_transcriber").joinpath(filename).read_text(encoding="utf-8")
     except (FileNotFoundError, TypeError):
         # Fallback for editable installs / development
         prompt_path = Path(__file__).parent / filename

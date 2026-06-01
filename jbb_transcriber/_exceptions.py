@@ -1,4 +1,4 @@
-"""Exception hierarchy for the transcriber package.
+"""Exception hierarchy for the jbb_transcriber package.
 
 All business-logic errors raise typed exceptions instead of calling sys.exit().
 Only the CLI layer (cli.py) catches these and converts them to exit codes.
@@ -11,7 +11,7 @@ _RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
 
 class TranscriberError(Exception):
-    """Base exception for all transcriber errors."""
+    """Base exception for all jbb_transcriber errors."""
 
 
 class ConfigurationError(TranscriberError):

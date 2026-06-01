@@ -10,8 +10,8 @@ import asyncio
 import logging
 from types import ModuleType
 
-from transcriber._exceptions import ConfigurationError, TranscriptionError
-from transcriber._settings import WhisperSettings
+from jbb_transcriber._exceptions import ConfigurationError, TranscriptionError
+from jbb_transcriber._settings import WhisperSettings
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ def _import_whisper() -> ModuleType:
         raise ConfigurationError(
             [
                 "openai-whisper is not installed (required for local mode). "
-                'Install with: uv tool install "transcriber[local]"'
+                'Install with: uv tool install "jbb_transcriber[local]"'
             ]
         ) from None
 

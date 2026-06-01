@@ -42,7 +42,7 @@ build:
 clean:
 	rm -rf build/ dist/ *.egg-info/
 	rm -rf .pytest_cache/ .mypy_cache/ .ruff_cache/
-	rm -rf __pycache__ tests/__pycache__ transcriber/__pycache__
+	rm -rf __pycache__ tests/__pycache__ jbb_transcriber/__pycache__
 	find . -type f -name "*.pyc" -delete
 	find . -type d -name "__pycache__" -delete
 

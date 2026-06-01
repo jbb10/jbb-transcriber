@@ -8,9 +8,9 @@ import tempfile
 
 import pytest
 
-from transcriber import ConfigurationError
-from transcriber.backends._whisper import format_whisper_output
-from transcriber.cli import positive_int, validate_cli_config
+from jbb_transcriber import ConfigurationError
+from jbb_transcriber.backends._whisper import format_whisper_output
+from jbb_transcriber.cli import positive_int, validate_cli_config
 
 
 class TestPositiveIntType:
@@ -71,9 +71,9 @@ class TestValidateCliConfig:
 
     def test_parallel_workers_too_high(self, valid_kwargs, monkeypatch):
         """Rejects parallel_workers > 100."""
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_MODEL", "test-model")
         valid_kwargs["parallel_workers"] = 200
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -83,9 +83,9 @@ class TestValidateCliConfig:
 
     def test_output_dir_not_exists(self, valid_kwargs, monkeypatch):
         """Rejects output path in nonexistent directory."""
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_MODEL", "test-model")
         valid_kwargs["output_file"] = "/nonexistent/directory/output.txt"
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -95,9 +95,9 @@ class TestValidateCliConfig:
 
     def test_audio_file_not_found(self, valid_kwargs, monkeypatch):
         """Rejects nonexistent audio file."""
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_MODEL", "test-model")
         valid_kwargs["audio_file"] = "/nonexistent/audio.mp3"
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -107,10 +107,10 @@ class TestValidateCliConfig:
 
     def test_glossary_file_not_found(self, valid_kwargs, monkeypatch):
         """Rejects nonexistent glossary file."""
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
-        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-text-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_MODEL", "test-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_TEXT_MODEL", "test-text-model")
         valid_kwargs["glossary"] = "/nonexistent/glossary.txt"
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -120,9 +120,9 @@ class TestValidateCliConfig:
 
     def test_multiple_errors_shown(self, valid_kwargs, monkeypatch):
         """All validation errors are reported at once."""
-        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("JBB_TRANSCRIBER_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("TRANSCRIBER_BASE_URL", raising=False)
+        monkeypatch.delenv("JBB_TRANSCRIBER_BASE_URL", raising=False)
         monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
         valid_kwargs["audio_file"] = "/nonexistent/audio.mp3"
         valid_kwargs["parallel_workers"] = 200
@@ -136,39 +136,39 @@ class TestValidateCliConfig:
         assert "OPENAI_API_KEY" in errors_text
 
     def test_synthesise_requires_text_model(self, valid_kwargs, monkeypatch):
-        """--synthesise requires TRANSCRIBER_TEXT_MODEL."""
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
-        monkeypatch.delenv("TRANSCRIBER_TEXT_MODEL", raising=False)
+        """--synthesise requires JBB_TRANSCRIBER_TEXT_MODEL."""
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_MODEL", "test-model")
+        monkeypatch.delenv("JBB_TRANSCRIBER_TEXT_MODEL", raising=False)
         valid_kwargs["synthesise"] = True
 
         with pytest.raises(ConfigurationError) as exc_info:
             validate_cli_config(**valid_kwargs)
 
         errors_text = " ".join(exc_info.value.errors)
-        assert "TRANSCRIBER_TEXT_MODEL" in errors_text
+        assert "JBB_TRANSCRIBER_TEXT_MODEL" in errors_text
         assert "--synthesise" in errors_text
 
     def test_synthesise_only_requires_text_model(self, valid_kwargs, monkeypatch):
-        """--synthesise-only requires TRANSCRIBER_TEXT_MODEL."""
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.delenv("TRANSCRIBER_TEXT_MODEL", raising=False)
+        """--synthesise-only requires JBB_TRANSCRIBER_TEXT_MODEL."""
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.delenv("JBB_TRANSCRIBER_TEXT_MODEL", raising=False)
         valid_kwargs["synthesise_only"] = True
 
         with pytest.raises(ConfigurationError) as exc_info:
             validate_cli_config(**valid_kwargs)
 
         errors_text = " ".join(exc_info.value.errors)
-        assert "TRANSCRIBER_TEXT_MODEL" in errors_text
+        assert "JBB_TRANSCRIBER_TEXT_MODEL" in errors_text
         assert "--synthesise-only" in errors_text
 
     def test_synthesise_only_and_synthesise_conflict(self, valid_kwargs, monkeypatch):
         """--synthesise and --synthesise-only cannot be used together."""
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["synthesise"] = True
         valid_kwargs["synthesise_only"] = True
 
@@ -182,9 +182,9 @@ class TestValidateCliConfig:
 
     def test_synthesise_only_transcript_not_found(self, valid_kwargs, monkeypatch):
         """--synthesise-only fails if transcript file not found."""
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["synthesise_only"] = True
         valid_kwargs["audio_file"] = "/nonexistent/transcript.txt"
 
@@ -198,9 +198,9 @@ class TestValidateCliConfig:
         transcript = tmp_path / "transcript.txt"
         transcript.write_text("Some transcript content")
 
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["synthesise_only"] = True
         valid_kwargs["audio_file"] = str(transcript)
 
@@ -210,14 +210,14 @@ class TestValidateCliConfig:
         assert config.audio_file == transcript
 
     def test_synthesise_only_no_transcribe_model_needed(self, valid_kwargs, monkeypatch, tmp_path):
-        """--synthesise-only does not require TRANSCRIBER_MODEL (transcription model)."""
+        """--synthesise-only does not require JBB_TRANSCRIBER_MODEL (transcription model)."""
         transcript = tmp_path / "transcript.txt"
         transcript.write_text("Some transcript content")
 
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.delenv("TRANSCRIBER_MODEL", raising=False)
-        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.delenv("JBB_TRANSCRIBER_MODEL", raising=False)
+        monkeypatch.setenv("JBB_TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["synthesise_only"] = True
         valid_kwargs["audio_file"] = str(transcript)
 
@@ -227,9 +227,9 @@ class TestValidateCliConfig:
 
     def test_valid_config_returns_dataclass(self, valid_kwargs, monkeypatch):
         """Valid config returns ValidatedConfig dataclass."""
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_MODEL", "test-model")
 
         config = validate_cli_config(**valid_kwargs)
 
@@ -251,7 +251,7 @@ class TestValidationHappensBeforeWork:
             [
                 sys.executable,
                 "-m",
-                "transcriber",
+                "jbb_transcriber",
                 short_audio_file,
                 "--parallel-workers",
                 "200",  # Invalid: exceeds 100
@@ -272,10 +272,10 @@ class TestValidationHappensBeforeWork:
         import sys
 
         env = os.environ.copy()
-        env["TRANSCRIBER_API_KEY"] = "test-key"
-        env["TRANSCRIBER_BASE_URL"] = "https://test.example.com"
-        env["TRANSCRIBER_MODEL"] = "test-model"
-        env["TRANSCRIBER_TEXT_MODEL"] = "test-model"
+        env["JBB_TRANSCRIBER_API_KEY"] = "test-key"
+        env["JBB_TRANSCRIBER_BASE_URL"] = "https://test.example.com"
+        env["JBB_TRANSCRIBER_MODEL"] = "test-model"
+        env["JBB_TRANSCRIBER_TEXT_MODEL"] = "test-model"
         # Remove old vars to avoid interference
         env.pop("AZURE_TRANSCRIBE_API_KEY", None)
         env.pop("AZURE_TRANSCRIBE_URL", None)
@@ -286,7 +286,7 @@ class TestValidationHappensBeforeWork:
             [
                 sys.executable,
                 "-m",
-                "transcriber",
+                "jbb_transcriber",
                 short_audio_file,
                 "--glossary",
                 "/nonexistent/glossary.txt",
@@ -312,7 +312,7 @@ class TestValidationHappensBeforeWork:
             [
                 sys.executable,
                 "-m",
-                "transcriber",
+                "jbb_transcriber",
                 short_audio_file,
             ],
             env=env,
@@ -330,63 +330,63 @@ class TestMissingCredentials:
     """Tests for missing credentials via settings .from_env()."""
 
     def test_missing_api_key(self, clean_env):
-        """Raises ConfigurationError when both TRANSCRIBER/OPENAI API keys are missing."""
-        from transcriber import AzureTranscriptionSettings
+        """Raises ConfigurationError when both JBB_TRANSCRIBER/OPENAI API keys are missing."""
+        from jbb_transcriber import AzureTranscriptionSettings
 
         with pytest.raises(ConfigurationError):
             AzureTranscriptionSettings.from_env()
 
-    def test_transcriber_api_key_overrides_openai(self, clean_env, monkeypatch):
-        """TRANSCRIBER_API_KEY takes precedence over OPENAI_API_KEY."""
-        from transcriber._settings import resolve_api_key
+    def test_jbb_transcriber_api_key_overrides_openai(self, clean_env, monkeypatch):
+        """JBB_TRANSCRIBER_API_KEY takes precedence over OPENAI_API_KEY."""
+        from jbb_transcriber._settings import resolve_api_key
 
         monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "transcriber-key")
-        assert resolve_api_key() == "transcriber-key"
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "jbb_transcriber-key")
+        assert resolve_api_key() == "jbb_transcriber-key"
 
     def test_openai_api_key_used_as_fallback(self, clean_env, monkeypatch):
-        """OPENAI_API_KEY is used when TRANSCRIBER_API_KEY is not set."""
-        from transcriber._settings import resolve_api_key
+        """OPENAI_API_KEY is used when JBB_TRANSCRIBER_API_KEY is not set."""
+        from jbb_transcriber._settings import resolve_api_key
 
         monkeypatch.setenv("OPENAI_API_KEY", "openai-fallback-key")
         assert resolve_api_key() == "openai-fallback-key"
 
     def test_missing_base_url(self, clean_env, monkeypatch):
-        """Raises ConfigurationError when both TRANSCRIBER/OPENAI base URLs are missing."""
-        from transcriber import AzureTranscriptionSettings
+        """Raises ConfigurationError when both JBB_TRANSCRIBER/OPENAI base URLs are missing."""
+        from jbb_transcriber import AzureTranscriptionSettings
 
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
 
         with pytest.raises(ConfigurationError):
             AzureTranscriptionSettings.from_env()
 
     def test_missing_transcription_model(self, clean_env, monkeypatch):
-        """Raises ConfigurationError when TRANSCRIBER_MODEL is missing."""
-        from transcriber import AzureTranscriptionSettings
+        """Raises ConfigurationError when JBB_TRANSCRIBER_MODEL is missing."""
+        from jbb_transcriber import AzureTranscriptionSettings
 
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://example.com")
 
         with pytest.raises(ConfigurationError):
             AzureTranscriptionSettings.from_env()
 
     def test_missing_text_model(self, clean_env, monkeypatch):
-        """Raises ConfigurationError when TRANSCRIBER_TEXT_MODEL is missing."""
-        from transcriber import AzureLLMSettings
+        """Raises ConfigurationError when JBB_TRANSCRIBER_TEXT_MODEL is missing."""
+        from jbb_transcriber import AzureLLMSettings
 
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://example.com")
 
         with pytest.raises(ConfigurationError):
             AzureLLMSettings.from_env()
 
     def test_from_env_transcription_includes_model(self, monkeypatch):
         """AzureTranscriptionSettings.from_env() returns settings with model."""
-        from transcriber import AzureTranscriptionSettings
+        from jbb_transcriber import AzureTranscriptionSettings
 
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://example.com")
-        monkeypatch.setenv("TRANSCRIBER_MODEL", "my-transcribe-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_MODEL", "my-transcribe-model")
 
         settings = AzureTranscriptionSettings.from_env()
         assert settings.model == "my-transcribe-model"
@@ -394,11 +394,11 @@ class TestMissingCredentials:
 
     def test_from_env_llm_includes_model(self, monkeypatch):
         """AzureLLMSettings.from_env() returns settings with model."""
-        from transcriber import AzureLLMSettings
+        from jbb_transcriber import AzureLLMSettings
 
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://example.com")
-        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "my-llm-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_TEXT_MODEL", "my-llm-model")
 
         settings = AzureLLMSettings.from_env()
         assert settings.model == "my-llm-model"
@@ -412,7 +412,7 @@ class TestFileValidation:
         """Raises AudioFileError for nonexistent audio file."""
         from unittest.mock import AsyncMock
 
-        from transcriber import AudioFileError, transcribe_file
+        from jbb_transcriber import AudioFileError, transcribe_file
 
         mock_backend = AsyncMock()
         with pytest.raises(AudioFileError):
@@ -424,8 +424,8 @@ class TestInvalidApiCredentials:
 
     async def test_invalid_api_key_returns_error(self, short_audio_file):
         """Invalid API key results in a TranscriptionError."""
-        from transcriber import TranscriptionError
-        from transcriber.backends import create_azure_transcription_backend
+        from jbb_transcriber import TranscriptionError
+        from jbb_transcriber.backends import create_azure_transcription_backend
 
         backend = create_azure_transcription_backend(
             api_key="invalid-api-key-12345",
@@ -440,8 +440,8 @@ class TestInvalidApiCredentials:
 
     async def test_invalid_url_returns_error(self, short_audio_file):
         """Invalid API URL results in a TranscriptionError."""
-        from transcriber import TranscriptionError
-        from transcriber.backends import create_azure_transcription_backend
+        from jbb_transcriber import TranscriptionError
+        from jbb_transcriber.backends import create_azure_transcription_backend
 
         backend = create_azure_transcription_backend(
             api_key="test-key",
@@ -464,7 +464,7 @@ class TestEdgeCases:
             temp_path = f.name
 
         try:
-            from transcriber._audio import get_audio_duration
+            from jbb_transcriber._audio import get_audio_duration
 
             duration = get_audio_duration(temp_path)
             assert duration is None or duration == 0
@@ -478,7 +478,7 @@ class TestEdgeCases:
             temp_path = f.name
 
         try:
-            from transcriber._audio import get_audio_duration
+            from jbb_transcriber._audio import get_audio_duration
 
             duration = get_audio_duration(temp_path)
             assert duration is None
@@ -491,7 +491,7 @@ class TestWhisperImport:
 
     def test_import_whisper_missing_raises(self, monkeypatch):
         """_import_whisper raises ConfigurationError when whisper not installed."""
-        from transcriber.backends._whisper import _import_whisper
+        from jbb_transcriber.backends._whisper import _import_whisper
 
         original_import = builtins.__import__
 
@@ -580,9 +580,9 @@ class TestLocalModeValidation:
 
     def test_local_mode_no_credentials_required(self, local_kwargs, monkeypatch):
         """--local without text features works without any API credentials."""
-        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("JBB_TRANSCRIBER_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("TRANSCRIBER_BASE_URL", raising=False)
+        monkeypatch.delenv("JBB_TRANSCRIBER_BASE_URL", raising=False)
         monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
         # Mock whisper import
@@ -606,9 +606,9 @@ class TestLocalModeValidation:
     def test_azure_mode_still_requires_credentials(self, local_kwargs, monkeypatch):
         """Default (non-local) mode still requires API credentials."""
         local_kwargs["local"] = False
-        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("JBB_TRANSCRIBER_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("TRANSCRIBER_BASE_URL", raising=False)
+        monkeypatch.delenv("JBB_TRANSCRIBER_BASE_URL", raising=False)
         monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -620,9 +620,9 @@ class TestLocalModeValidation:
     def test_local_with_glossary_requires_text_credentials(self, local_kwargs, monkeypatch):
         """--local with --glossary still requires LLM credentials and text model."""
         local_kwargs["glossary"] = "/some/glossary.txt"
-        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("JBB_TRANSCRIBER_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("TRANSCRIBER_BASE_URL", raising=False)
+        monkeypatch.delenv("JBB_TRANSCRIBER_BASE_URL", raising=False)
         monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
         # Mock whisper import
@@ -643,14 +643,14 @@ class TestLocalModeValidation:
         errors_text = " ".join(exc_info.value.errors)
         # Should require LLM credentials but NOT transcription model
         assert "OPENAI_API_KEY" in errors_text
-        assert "TRANSCRIBER_MODEL" not in errors_text
+        assert "JBB_TRANSCRIBER_MODEL" not in errors_text
 
     def test_local_with_synthesise_requires_text_credentials(self, local_kwargs, monkeypatch):
         """--local with --synthesise still requires LLM credentials and text model."""
         local_kwargs["synthesise"] = True
-        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("JBB_TRANSCRIBER_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.delenv("TRANSCRIBER_BASE_URL", raising=False)
+        monkeypatch.delenv("JBB_TRANSCRIBER_BASE_URL", raising=False)
         monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
         # Mock whisper import
@@ -673,7 +673,7 @@ class TestLocalModeValidation:
 
     def test_local_mode_whisper_not_installed_error(self, local_kwargs, monkeypatch):
         """--local mode fails with helpful message when whisper not installed."""
-        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("JBB_TRANSCRIBER_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
         # Mock whisper import to fail
@@ -721,9 +721,9 @@ class TestTextFileAutoDetection:
         transcript = tmp_path / f"meeting{ext}"
         transcript.write_text("Some transcript content")
 
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["audio_file"] = str(transcript)
 
         config = validate_cli_config(**valid_kwargs)
@@ -735,9 +735,9 @@ class TestTextFileAutoDetection:
         transcript = tmp_path / "notes.txt"
         transcript.write_text("Some notes")
 
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["audio_file"] = str(transcript)
         valid_kwargs["synthesise"] = True
 
@@ -746,14 +746,14 @@ class TestTextFileAutoDetection:
         assert config.synthesise_only is True
 
     def test_text_file_no_transcription_model_needed(self, valid_kwargs, monkeypatch, tmp_path):
-        """Text files do not require TRANSCRIBER_MODEL (transcription model)."""
+        """Text files do not require JBB_TRANSCRIBER_MODEL (transcription model)."""
         transcript = tmp_path / "transcript.txt"
         transcript.write_text("Some transcript content")
 
-        monkeypatch.delenv("TRANSCRIBER_MODEL", raising=False)
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("TRANSCRIBER_TEXT_MODEL", "test-model")
+        monkeypatch.delenv("JBB_TRANSCRIBER_MODEL", raising=False)
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_TEXT_MODEL", "test-model")
         valid_kwargs["audio_file"] = str(transcript)
 
         config = validate_cli_config(**valid_kwargs)
@@ -765,7 +765,7 @@ class TestTextFileAutoDetection:
         transcript = tmp_path / "transcript.txt"
         transcript.write_text("Some transcript content")
 
-        monkeypatch.delenv("TRANSCRIBER_API_KEY", raising=False)
+        monkeypatch.delenv("JBB_TRANSCRIBER_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         valid_kwargs["audio_file"] = str(transcript)
 
@@ -777,8 +777,8 @@ class TestTextFileAutoDetection:
 
     def test_text_file_not_found(self, valid_kwargs, monkeypatch):
         """Non-existent text file raises ConfigurationError."""
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
         valid_kwargs["audio_file"] = "/nonexistent/transcript.txt"
 
         with pytest.raises(ConfigurationError) as exc_info:
@@ -788,9 +788,9 @@ class TestTextFileAutoDetection:
 
     def test_audio_extension_not_auto_detected(self, valid_kwargs, monkeypatch):
         """Audio file extensions are NOT auto-detected as text files."""
-        monkeypatch.setenv("TRANSCRIBER_API_KEY", "test-key")
-        monkeypatch.setenv("TRANSCRIBER_BASE_URL", "https://test.example.com")
-        monkeypatch.setenv("TRANSCRIBER_MODEL", "test-model")
+        monkeypatch.setenv("JBB_TRANSCRIBER_API_KEY", "test-key")
+        monkeypatch.setenv("JBB_TRANSCRIBER_BASE_URL", "https://test.example.com")
+        monkeypatch.setenv("JBB_TRANSCRIBER_MODEL", "test-model")
 
         config = validate_cli_config(**valid_kwargs)
 
